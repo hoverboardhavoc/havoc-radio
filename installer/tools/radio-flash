@@ -1,0 +1,389 @@
+#!/usr/bin/env python3
+"""Flash the radio's ESP8266 through the Havoc Radio Installer.
+
+Uploads the images to the installer's stage in retryable parts, where they
+become the carried image, then has the installer flash and verify the radio
+over its serial header (installer/SPEC.md):
+
+    radio-flash [--host 192.168.4.1] [--baud 460800] [--no-reset] \\
+        (--project-args <dir>/flash_project_args | <offset> <file> ...)
+
+Standard library only.
+"""
+
+import argparse
+import hashlib
+import http.client
+import json
+import os
+import sys
+import time
+
+SECTOR = 4096
+PART = 65536
+ERASED = b"\xff" * SECTOR
+
+# Per-request timeout, and the retry backoff (doubling) on any failure.
+TIMEOUT = 30.0
+BACKOFF_MIN = 1.0
+BACKOFF_MAX = 10.0
+POLL_INTERVAL = 2.0
+# Rounds of upload + /stage/check before giving up on staged data that keeps
+# failing its hash.
+CHECK_ROUNDS = 3
+# Flash jobs to start when the bridge reboots before the host sees the result.
+JOB_ATTEMPTS = 3
+
+# ESP8266 image header fields, as esptool encodes them (byte 2 mode, byte 3
+# size << 4 | freq).
+FLASH_MODES = {"qio": 0, "qout": 1, "dio": 2, "dout": 3}
+FLASH_FREQS = {"40m": 0x0, "26m": 0x1, "20m": 0x2, "80m": 0xF}
+FLASH_SIZES = {"512KB": 0x00, "256KB": 0x10, "1MB": 0x20, "2MB": 0x30, "4MB": 0x40,
+               "2MB-c1": 0x50, "4MB-c1": 0x60, "8MB": 0x80, "16MB": 0x90}
+
+
+class FlashError(Exception):
+    pass
+
+
+class BridgeRestarted(FlashError):
+    pass
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def why(err):
+    return str(err) or type(err).__name__
+
+
+# ---- Images and regions ------------------------------------------------------
+
+def parse_project_args(path):
+    """Read an IDF flash_project_args file: a flash settings line, then
+    'offset path' lines relative to the file's directory."""
+    base = os.path.dirname(os.path.abspath(path))
+    settings = {}
+    pairs = []
+    with open(path) as f:
+        lines = [ln.strip() for ln in f if ln.strip()]
+    if not lines:
+        raise FlashError(f"{path}: empty")
+    words = lines[0].split()
+    for i in range(0, len(words) - 1, 2):
+        settings[words[i].lstrip("-")] = words[i + 1]
+    for ln in lines[1:]:
+        off, rel = ln.split(None, 1)
+        pairs.append((int(off, 0), os.path.join(base, rel)))
+    return settings, pairs
+
+
+def apply_flash_settings(data, settings):
+    """Patch the flash mode, frequency and size into an image at 0x0 the way
+    esptool does: only when it starts with the 0xE9 image magic, and only for
+    the fields that are not 'keep'."""
+    if len(data) < 4 or data[0] != 0xE9:
+        return data
+    mode = settings.get("flash_mode", "keep")
+    freq = settings.get("flash_freq", "keep")
+    size = settings.get("flash_size", "keep")
+    b = bytearray(data)
+    if mode != "keep":
+        b[2] = FLASH_MODES[mode]
+    size_freq = b[3]
+    if freq != "keep":
+        size_freq = (size_freq & 0xF0) | FLASH_FREQS[freq]
+    if size != "keep":
+        size_freq = (size_freq & 0x0F) | FLASH_SIZES[size]
+    b[3] = size_freq
+    return bytes(b)
+
+
+def split_regions(target, data):
+    """Split one image at a 4 KB-aligned target offset into regions. A run of
+    whole sectors that are all 0xFF becomes an erase-only region; everything
+    else becomes a data region with its tail padded to the sector with 0xFF."""
+    if target % SECTOR:
+        raise FlashError(f"offset 0x{target:x} is not 4 KB-aligned")
+    regions = []
+    nsec = (len(data) + SECTOR - 1) // SECTOR
+    i = 0
+    while i < nsec:
+        erased = len(data[i * SECTOR:(i + 1) * SECTOR]) == SECTOR and \
+            data[i * SECTOR:(i + 1) * SECTOR] == ERASED
+        j = i
+        while j < nsec:
+            sec = data[j * SECTOR:(j + 1) * SECTOR]
+            if (len(sec) == SECTOR and sec == ERASED) != erased:
+                break
+            j += 1
+        chunk = data[i * SECTOR:j * SECTOR]
+        chunk += b"\xff" * ((j - i) * SECTOR - len(chunk))
+        regions.append({
+            "target": target + i * SECTOR,
+            "length": len(chunk),
+            "sha256": hashlib.sha256(chunk).hexdigest(),
+            "erase": erased,
+            "data": None if erased else chunk,
+        })
+        i = j
+    return regions
+
+
+def build_regions(pairs, settings=None):
+    """Regions for a list of (offset, path) pairs, sorted by target offset."""
+    regions = []
+    spans = []
+    for off, path in pairs:
+        with open(path, "rb") as f:
+            data = f.read()
+        if not data:
+            raise FlashError(f"{path}: empty file")
+        if off == 0 and settings:
+            data = apply_flash_settings(data, settings)
+        spans.append((off, off + len(data), path))
+        regions += split_regions(off, data)
+    spans.sort()
+    for (a0, a1, pa), (b0, _, pb) in zip(spans, spans[1:]):
+        if b0 < (a1 + SECTOR - 1) // SECTOR * SECTOR:
+            raise FlashError(f"{pa} and {pb} overlap")
+    regions.sort(key=lambda r: r["target"])
+    return regions
+
+
+def manifest(regions, label=""):
+    return {"label": label,
+            "regions": [{k: r[k] for k in ("target", "length", "sha256", "erase")}
+                        for r in regions]}
+
+
+def image_label(pairs):
+    """The carried image's label: the name of the largest file (the app of a
+    build)."""
+    return os.path.basename(max(pairs, key=lambda p: os.path.getsize(p[1]))[1])
+
+
+# ---- Bridge client --------------------------------------------------------------
+
+class HTTPStatusError(Exception):
+    def __init__(self, status, body):
+        super().__init__(f"HTTP {status}: {body.get('error', body)}")
+        self.status = status
+        self.body = body
+
+
+class Bridge:
+    def __init__(self, host):
+        self.host = host
+        self.retries = 0  # failed requests that were retried
+
+    def request_once(self, method, path, body=None, ctype="application/json"):
+        conn = http.client.HTTPConnection(self.host, timeout=TIMEOUT)
+        try:
+            headers = {"Content-Type": ctype} if body is not None else {}
+            conn.request(method, path, body=body, headers=headers)
+            resp = conn.getresponse()
+            raw = resp.read()
+        finally:
+            conn.close()
+        try:
+            doc = json.loads(raw) if raw else {}
+        except ValueError:
+            doc = {"error": raw.decode(errors="replace")}
+        if resp.status >= 400:
+            raise HTTPStatusError(resp.status, doc)
+        return doc
+
+    def request(self, method, path, body=None, ctype="application/json"):
+        """Retry on any network error, timeout or server error, with backoff
+        and no overall limit. A 4xx answer is final."""
+        delay = BACKOFF_MIN
+        while True:
+            try:
+                return self.request_once(method, path, body, ctype)
+            except HTTPStatusError as e:
+                if e.status < 500:
+                    raise
+                err = e
+            except (OSError, http.client.HTTPException) as e:
+                err = e
+            self.retries += 1
+            log(f"  {method} {path}: {why(err)}; retry in {delay:.0f} s")
+            time.sleep(delay)
+            delay = min(delay * 2, BACKOFF_MAX)
+
+    def post_json(self, path, doc):
+        return self.request("POST", path, json.dumps(doc).encode())
+
+
+def part_present(state, region, part):
+    parts = state["regions"][region]["parts"]
+    return part < len(parts) and parts[part]
+
+
+def upload(bridge, regions, on_part=None, label=""):
+    """Stage every region on the bridge. Returns the number of parts sent.
+    on_part(region, part) is called after each stored part."""
+    doc = manifest(regions, label)
+    state = bridge.post_json("/stage", doc)
+    total = sum(len(s["parts"]) for s in state["regions"])
+    have = sum(sum(1 for p in s["parts"] if p) for s in state["regions"])
+    log(f"stage: {len(regions)} regions, {total} parts, {have} already staged"
+        + ("" if state.get("kept") else " (new manifest)"))
+    sent = 0
+    for rnd in range(CHECK_ROUNDS):
+        for i, r in enumerate(regions):
+            if r["erase"]:
+                continue
+            for k in range((r["length"] + PART - 1) // PART):
+                if part_present(state, i, k):
+                    continue
+                sent += put_part(bridge, i, k, r)
+                if on_part:
+                    on_part(i, k)
+        check = bridge.request("POST", "/stage/check")
+        if check["ok"]:
+            return sent
+        bad = [f"0x{regions[i]['target']:x}" for i, v in enumerate(check["regions"]) if v != "ok"]
+        log(f"stage check mismatch in {', '.join(bad)}; uploading again")
+        state = bridge.request("GET", "/stage")
+    raise FlashError("staged data failed its check")
+
+
+def put_part(bridge, i, k, r):
+    """Send one 64 KB part until the bridge holds it. After a failed send,
+    ask the bridge first: a part it stored before the answer was lost is not
+    sent again. Returns the number of sends."""
+    off = k * PART
+    data = r["data"][off:off + PART]
+    path = f"/stage/part?region={i}&offset={off}"
+    delay = BACKOFF_MIN
+    sends = 0
+    while True:
+        sends += 1
+        try:
+            bridge.request_once("PUT", path, data, "application/octet-stream")
+            log(f"  0x{r['target'] + off:06x} +{len(data)} staged")
+            return sends
+        except HTTPStatusError as e:
+            if e.status < 500:
+                raise
+            err = e
+        except (OSError, http.client.HTTPException) as e:
+            err = e
+        bridge.retries += 1
+        log(f"  0x{r['target'] + off:06x}: {why(err)}; retry in {delay:.0f} s")
+        time.sleep(delay)
+        delay = min(delay * 2, BACKOFF_MAX)
+        if part_present(bridge.request("GET", "/stage"), i, k):
+            log(f"  0x{r['target'] + off:06x} +{len(data)} staged (answer was lost)")
+            return sends
+
+
+def run_job(bridge, baud, reset_after):
+    """Start the flash job and poll it to the end. Returns the final status."""
+    prev = bridge.request("GET", "/flash")["job"]
+    doc = json.dumps({"baud": baud, "reset_after": reset_after}).encode()
+    delay = BACKOFF_MIN
+    while True:
+        try:
+            job = bridge.request_once("POST", "/flash", doc)["job"]
+            break
+        except HTTPStatusError as e:
+            if e.status < 500:
+                raise FlashError(f"flash job refused: {e.body.get('error', e.body)}")
+            err = e
+        except (OSError, http.client.HTTPException) as e:
+            err = e
+        bridge.retries += 1
+        log(f"  POST /flash: {why(err)}; retry in {delay:.0f} s")
+        time.sleep(delay)
+        delay = min(delay * 2, BACKOFF_MAX)
+        st = bridge.request("GET", "/flash")
+        if st["job"] > prev:  # it started; only the answer was lost
+            job = st["job"]
+            break
+
+    log(f"flash job {job} started at {baud} baud")
+    last = None
+    while True:
+        time.sleep(POLL_INTERVAL)
+        try:
+            st = bridge.request_once("GET", "/flash")
+        except (OSError, http.client.HTTPException, HTTPStatusError) as e:
+            log(f"  poll failed ({why(e)}); still waiting")
+            continue
+        if st["job"] != job:
+            raise BridgeRestarted(f"the bridge restarted during job {job}")
+        line = (f"  {st['state']}: region {st['region']}, "
+                f"{st['bytes_done']}/{st['bytes_total']} B")
+        if line != last:
+            log(line)
+            last = line
+        if st["state"] in ("done", "failed"):
+            return st
+
+
+def flash(host, regions, baud=460800, reset_after=True, label=""):
+    """Upload, check and flash. Returns True when every region verified."""
+    bridge = Bridge(host)
+    t0 = time.monotonic()
+    sent = upload(bridge, regions, label=label)
+    t1 = time.monotonic()
+    for attempt in range(1, JOB_ATTEMPTS + 1):
+        try:
+            st = run_job(bridge, baud, reset_after)
+            break
+        except BridgeRestarted as e:
+            if attempt == JOB_ATTEMPTS:
+                raise
+            # The staged data survives a reboot; check it again and rerun.
+            log(f"{e}; running the job again")
+            sent += upload(bridge, regions, label=label)
+    t2 = time.monotonic()
+    for r, v in zip(regions, st["regions"]):
+        kind = "erase" if r["erase"] else "data "
+        log(f"0x{r['target']:06x} {r['length']:8d} B {kind} "
+            f"{'verified' if v['verified'] else 'NOT verified'}")
+    if st["error"]:
+        log(f"error: {st['error']}")
+    log(f"upload {t1 - t0:.1f} s ({sent} part sends, {bridge.retries} retries), "
+        f"flash job {st.get('elapsed_ms', (t2 - t1) * 1000) / 1000:.1f} s at {st['baud']} baud, "
+        f"{st.get('rewrites', 0)} region rewrites")
+    return st["state"] == "done" and all(v["verified"] for v in st["regions"])
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--host", default="192.168.4.1",
+                    help="installer host name or IP address (192.168.4.1 on its hotspot)")
+    ap.add_argument("--baud", type=int, default=460800)
+    ap.add_argument("--no-reset", action="store_true",
+                    help="leave the target in the loader after flashing")
+    ap.add_argument("--project-args", metavar="FILE",
+                    help="an IDF flash_project_args file")
+    ap.add_argument("pairs", nargs="*", metavar="OFFSET FILE")
+    args = ap.parse_args(argv)
+
+    try:
+        if args.project_args:
+            if args.pairs:
+                ap.error("give --project-args or offset/file pairs, not both")
+            settings, pairs = parse_project_args(args.project_args)
+        else:
+            if not args.pairs or len(args.pairs) % 2:
+                ap.error("need <offset> <file> pairs")
+            settings = None
+            pairs = [(int(args.pairs[i], 0), args.pairs[i + 1])
+                     for i in range(0, len(args.pairs), 2)]
+        regions = build_regions(pairs, settings)
+        ok = flash(args.host, regions, args.baud, not args.no_reset, image_label(pairs))
+    except (FlashError, HTTPStatusError, OSError) as e:
+        log(f"radio-flash: {e}")
+        return 1
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

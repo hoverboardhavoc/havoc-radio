@@ -1,0 +1,28 @@
+# Checked-in settings; the generated sdkconfig is git-ignored.
+CONFIG_IDF_TARGET="esp32c3"
+
+# SuperMini: 4 MB flash. Two 1.25 MB app slots and the 1.375 MB stage partition
+# with the carried image (partitions.csv).
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# Self-update: a new firmware boots pending verification and marks itself valid
+# once the hotspot and the HTTP server answer; a restart before that makes the
+# bootloader return to the previous slot.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Log on the built-in USB Serial/JTAG port; UART0 and UART1 stay free.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# The console WebSocket.
+CONFIG_HTTPD_WS_SUPPORT=y
+# Android's captive-portal browser sends more than the default 512 bytes of headers.
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=2048
+# DNS, the update server and its session, the socket bridge and its client,
+# and up to 10 HTTP clients with the server's own sockets.
+CONFIG_LWIP_MAX_SOCKETS=20
+
+# The flash job brings its own esp-serial-flasher port on the radio's UART
+# (open-drain IO0/EN), so the library's ESP32 UART port is not built.
+# CONFIG_SERIAL_FLASHER_PORT_UART is not set

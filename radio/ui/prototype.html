@@ -1,0 +1,962 @@
+<title>Havoc Radio UI</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a bench sheet. The device sits left as a physical object; the notes column on the right documents controls and rules. */
+:root {
+  --bg: #eef0ec;
+  --paper: #f8f9f6;
+  --ink: #1d2320;
+  --muted: #5d6762;
+  --line: #cfd5d0;
+  --accent: #2f7d6b;
+  --bezel: #16191b;
+  --bezel-edge: #2a2f33;
+  --knob: #2b3034;
+  --knob-hi: #454c52;
+  --oled-on: #e6f4ff;
+  --oled-off: #07090b;
+  --display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121514; --paper: #1a1e1c; --ink: #e3e8e4; --muted: #98a39d; --line: #2c3330; --accent: #5fbfa6;
+    --bezel: #0b0d0e; --bezel-edge: #262b2f; --knob: #2b3034; --knob-hi: #4a5258; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121514; --paper: #1a1e1c; --ink: #e3e8e4; --muted: #98a39d; --line: #2c3330; --accent: #5fbfa6;
+  --bezel: #0b0d0e; --bezel-edge: #262b2f; --knob: #2b3034; --knob-hi: #4a5258; color-scheme: dark;
+}
+html, body { background: var(--bg); color: var(--ink); }
+body {
+  font-family: var(--display); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 1100px; margin: 0 auto; display: grid; gap: 28px; }
+header h1 { font-size: 1.7rem; font-weight: 800; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+header p { margin: 4px 0 0; color: var(--muted); max-width: 65ch; }
+.grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (max-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+
+.device {
+  background: var(--bezel); border: 1px solid var(--bezel-edge); border-radius: 18px;
+  padding: 22px; display: grid; gap: 22px; justify-items: center; min-width: 0;
+}
+.screen-wrap { width: 100%; display: grid; justify-items: center; gap: 6px; min-width: 0; }
+.screen { background: #000; padding: 10px; border-radius: 4px; box-shadow: inset 0 0 0 1px #222; max-width: 100%; }
+#oled { display: block; image-rendering: pixelated; max-width: 100%; }
+.scale-note { font-family: var(--mono); font-size: 11px; color: #8a949b; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: center; }
+#oled1x { image-rendering: pixelated; background: #000; outline: 1px solid #333; }
+.controls { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; justify-content: center; }
+#knob { width: 190px; height: 190px; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+#knob:focus-visible { outline: 2px solid var(--accent); outline-offset: 6px; border-radius: 50%; }
+.side { display: grid; gap: 8px; justify-items: center; }
+#sideBtn {
+  width: 54px; height: 54px; border-radius: 50%; border: 1px solid #3a4146; background: radial-gradient(circle at 40% 35%, #4b535a, #23282c);
+  color: #c9d2d8; font-family: var(--mono); font-size: 11px; cursor: pointer;
+}
+#sideBtn:active { transform: translateY(1px); background: #1d2124; }
+#sideBtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.side small { font-family: var(--mono); font-size: 11px; color: #8a949b; }
+.replay { font-family: var(--mono); font-size: 12px; background: transparent; color: #aeb8bf; border: 1px solid #3a4146; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.sims { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.replay:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.lastin { font-family: var(--mono); font-size: 12px; color: #8a949b; min-height: 1.5em; }
+
+.notes { display: grid; gap: 22px; min-width: 0; }
+.notes section { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; min-width: 0; }
+.notes h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+dl.keys { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 14px; margin: 0; }
+dl.keys dt { font-weight: 600; }
+dl.keys dd { margin: 0; color: var(--muted); }
+kbd { font-family: var(--mono); font-size: 0.82em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; background: var(--bg); color: var(--ink); }
+ol.rules { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+ol.rules li::marker { color: var(--accent); font-family: var(--mono); }
+fieldset { border: 0; padding: 0; margin: 0; display: flex; gap: 8px; flex-wrap: wrap; }
+fieldset label { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+fieldset input { accent-color: var(--accent); }
+fieldset label:has(input:checked) { border-color: var(--accent); color: var(--accent); }
+.small { font-size: 0.85rem; color: var(--muted); margin: 10px 0 0; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Havoc Radio wheel UI</h1>
+    <p>Prototype of the menu design for the Si4732 radio's 128&times;32 OLED, drawn pixel for pixel. Signals are simulated. Reload or use Replay splash to see the start-up screen.</p>
+  </header>
+  <div class="grid">
+    <div class="device">
+      <div class="screen-wrap">
+        <div class="screen"><canvas id="oled" width="128" height="32" aria-label="Radio display"></canvas></div>
+        <div class="scale-note"><span id="scaleLabel">scale</span><span>actual pixels:</span><canvas id="oled1x" width="128" height="32"></canvas></div>
+      </div>
+      <div class="controls">
+        <svg id="knob" viewBox="-100 -100 200 200" tabindex="0" role="slider" aria-label="Encoder knob: drag the ring to turn, press the centre">
+          <defs>
+            <radialGradient id="kg" cx="40%" cy="35%" r="70%"><stop offset="0" stop-color="var(--knob-hi)"/><stop offset="1" stop-color="var(--knob)"/></radialGradient>
+            <radialGradient id="cg" cx="45%" cy="40%" r="70%"><stop offset="0" stop-color="#5a636a"/><stop offset="1" stop-color="#2a2f33"/></radialGradient>
+          </defs>
+          <circle r="96" fill="#0f1213" />
+          <g id="knobRot"><circle r="88" fill="url(#kg)" stroke="#11151a" stroke-width="2"/><g id="ridges"></g><circle cx="0" cy="-74" r="4" fill="#c9d2d8"/></g>
+          <circle id="cap" r="40" fill="url(#cg)" stroke="#11151a" stroke-width="2"/>
+          <text y="4" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" fill="#aeb8bf" pointer-events="none">PRESS</text>
+        </svg>
+        <div class="side">
+          <button id="sideBtn" type="button" aria-label="Side button">SIDE</button>
+          <small id="sideLabel">mute</small>
+        </div>
+      </div>
+      <div class="lastin" id="lastIn" aria-live="polite"></div>
+      <div class="sims">
+        <button id="replay" type="button" class="replay">Replay splash</button>
+        <button id="simOta" type="button" class="replay">Firmware upload</button>
+        <button id="simEmpty" type="button" class="replay">Battery empty</button>
+      </div>
+    </div>
+
+    <div class="notes">
+      <section>
+        <h2>Controls</h2>
+        <dl class="keys">
+          <dt>Turn</dt><dd>Drag the outer ring, scroll over the knob, or <kbd>&larr;</kbd><kbd>&rarr;</kbd></dd>
+          <dt>Press</dt><dd>Click the centre, or <kbd>Enter</kbd></dd>
+          <dt>Long press</dt><dd>Hold the centre for 0.6 s</dd>
+          <dt>Hold + turn</dt><dd>Press the centre and drag around it, or hold <kbd>Space</kbd> and use the arrows</dd>
+          <dt>Side button</dt><dd>Click it, or <kbd>B</kbd>. Its action is set in Settings, Side button.</dd>
+        </dl>
+      </section>
+      <section>
+        <h2>Navigation rules</h2>
+        <ol class="rules">
+          <li>Home is the tuning screen. Turning tunes, with no hard band edges.</li>
+          <li>Press opens the menu. Choosing a band, mode, preset, step or bandwidth returns home.</li>
+          <li>The left gutter holds only selectable controls. Back (&#9664;) is at the top: turn up past the first entry to reach it. On the main menu the gutter also holds Presets, Mute and Settings. Turning clockwise goes down the entries, then up the gutter to Back, then round to the first entry: one loop around the screen.</li>
+          <li>A list opens with the cursor on the current value.</li>
+          <li>Long press: on home it saves a preset, anywhere else it goes home.</li>
+          <li>Hold + turn on home sets the volume. In a list it jumps a page.</li>
+          <li>Menus close after 8 s without input (not during text entry). The menu is at most two levels deep.</li>
+          <li>Text entry: turn through the character ring and press to type. Hold + turn jumps between groups (abc, ABC, 123, symbols, edit). DEL and OK are in the ring. Try Settings, WiFi, then a network.</li>
+        </ol>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+const W = 128, H = 32;
+const fb = new Uint8Array(W * H);
+const px = (x, y, c) => { if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = c; };
+const fill = (x, y, w, h, c) => { for (let j = y; j < y + h; j++) for (let i = x; i < x + w; i++) px(i, j, c); };
+const clear = () => fb.fill(0);
+
+// ---- "Pip": a proportional UI font drawn for this radio ----
+// Each glyph: 6 rows above the baseline (cap height 6, x-height 4) plus one descender row.
+// A text cell is 8 rows: row 0 is a margin so inverted selection bars have air above the caps.
+const G = s => s.split(' ');
+const PIP = {
+  ' ': G('.. .. .. .. .. .. ..'),
+  A: G('.##. #..# #..# #### #..# #..#'), B: G('###. #..# ###. #..# #..# ###.'), C: G('.### #... #... #... #... .###'),
+  D: G('###. #..# #..# #..# #..# ###.'), E: G('#### #... ###. #... #... ####'), F: G('#### #... ###. #... #... #...'),
+  G: G('.### #... #... #.## #..# .###'), H: G('#..# #..# #### #..# #..# #..#'), I: G('### .#. .#. .#. .#. ###'),
+  J: G('..## ...# ...# ...# #..# .##.'), K: G('#..# #.#. ##.. #.#. #..# #..#'), L: G('#... #... #... #... #... ####'),
+  M: G('#...# ##.## #.#.# #...# #...# #...#'), N: G('#..# ##.# #.## #..# #..# #..#'), O: G('.##. #..# #..# #..# #..# .##.'),
+  P: G('###. #..# #..# ###. #... #...'), Q: G('.##. #..# #..# #..# #.#. .#.#'), R: G('###. #..# #..# ###. #.#. #..#'),
+  S: G('.### #... .##. ...# ...# ###.'), T: G('##### ..#.. ..#.. ..#.. ..#.. ..#..'), U: G('#..# #..# #..# #..# #..# .##.'),
+  V: G('#...# #...# #...# .#.#. .#.#. ..#..'), W: G('#...# #...# #...# #.#.# ##.## #...#'), X: G('#..# #..# .##. .##. #..# #..#'),
+  Y: G('#...# .#.#. ..#.. ..#.. ..#.. ..#..'), Z: G('#### ...# ..#. .#.. #... ####'),
+  a: G('.... .... .### #..# #..# .###'), b: G('#... #... ###. #..# #..# ###.'), c: G('... ... .## #.. #.. .##'),
+  d: G('...# ...# .### #..# #..# .###'), e: G('.... .... .##. #### #... .###'), f: G('.## #.. ### #.. #.. #..'),
+  g: G('.... .... .### #..# .### ...# ###.'), h: G('#... #... ###. #..# #..# #..#'), i: G('# . # # # #'),
+  j: G('.# .. .# .# .# .# #.'), k: G('#.. #.. #.# ##. #.# #.#'), l: G('#. #. #. #. #. .#'),
+  m: G('..... ..... ####. #.#.# #.#.# #.#.#'), n: G('.... .... ###. #..# #..# #..#'), o: G('.... .... .##. #..# #..# .##.'),
+  p: G('.... .... ###. #..# ###. #... #...'), q: G('.... .... .### #..# .### ...# ...#'), r: G('... ... #.# ##. #.. #..'),
+  s: G('... ... .## #.. ..# ##.'), t: G('.#. .#. ### .#. .#. ..#'), u: G('.... .... #..# #..# #..# .###'),
+  v: G('... ... #.# #.# #.# .#.'), w: G('..... ..... #...# #.#.# #.#.# .#.#.'), x: G('... ... #.# .#. .#. #.#'),
+  y: G('.... .... #..# #..# .### ...# .##.'), z: G('... ... ### ..# #.. ###'),
+  0: G('.##. #..# #..# #..# #..# .##.'), 1: G('.#. ##. .#. .#. .#. ###'), 2: G('.##. #..# ..#. .#.. #... ####'),
+  3: G('###. ...# .##. ...# ...# ###.'), 4: G('#..# #..# #### ...# ...# ...#'), 5: G('#### #... ###. ...# ...# ###.'),
+  6: G('.##. #... ###. #..# #..# .##.'), 7: G('#### ...# ..#. .#.. .#.. .#..'), 8: G('.##. #..# .##. #..# #..# .##.'),
+  9: G('.##. #..# #..# .### ...# .##.'),
+  '.': G('. . . . . #'), ',': G('. . . . . # #'), '-': G('... ... ... ### ... ...'), ':': G('. . # . . #'),
+  '/': G('..# ..# .#. .#. #.. #..'), '+': G('... ... .#. ### .#. ...'), '%': G('#..# ...# ..#. .#.. #... #..#'),
+  '(': G('.# #. #. #. #. .#'), ')': G('#. .# .# .# .# #.'), "'": G('# # . . . .'), '!': G('# # # # . #'),
+  '=': G('... ... ### ... ### ...'), '<': G('..# .#. #.. .#. ..# ...'), '>': G('#.. .#. ..# .#. #.. ...'),
+  '◀': G('..# .## ### .## ..# ...'), '▶': G('#.. ##. ### ##. #.. ...'),
+  '|': G('# # # # # #'), '✓': G('..... ....# ...#. #.#.. .#... .....'), '?': G('.##. #..# ..#. .#.. .... .#..'),
+  '"': G('#.# #.# ... ... ... ...'), ';': G('. . # . . # #'), '_': G('.... .... .... .... .... .... ####'),
+  '@': G('.###. #...# #.### #.#.# #.### .###.'), '#': G('.#.#. ##### .#.#. ##### .#.#. .....'),
+  '$': G('.###. #.#.. .###. ..#.# .###. ..#..'), '&': G('.#.. #.#. .#.. #.#. #..# .##.'), '*': G('... #.# .#. #.# ... ...'),
+  // Latin letters for the UI languages. Lowercase marks use rows 1-2 of the cell; accented capitals are
+  // 5-row variants with the mark above; ogonek and cedilla use the descender row.
+  'á': G('..#. .#.. .### #..# #..# .###'), 'à': G('.#.. ..#. .### #..# #..# .###'), 'â': G('.##. #..# .### #..# #..# .###'),
+  'ä': G('#..# .... .### #..# #..# .###'), 'å': G('.##. .##. .### #..# #..# .###'), 'ã': G('.#.# #.#. .### #..# #..# .###'),
+  'é': G('..#. .#.. .##. #### #... .###'), 'è': G('.#.. ..#. .##. #### #... .###'), 'ê': G('.##. #..# .##. #### #... .###'),
+  'ë': G('#..# .... .##. #### #... .###'), 'ě': G('#..# .##. .##. #### #... .###'), 'ó': G('..#. .#.. .##. #..# #..# .##.'),
+  'ò': G('.#.. ..#. .##. #..# #..# .##.'), 'ô': G('.##. #..# .##. #..# #..# .##.'), 'ö': G('#..# .... .##. #..# #..# .##.'),
+  'õ': G('.#.# #.#. .##. #..# #..# .##.'), 'ú': G('..#. .#.. #..# #..# #..# .###'), 'ù': G('.#.. ..#. #..# #..# #..# .###'),
+  'û': G('.##. #..# #..# #..# #..# .###'), 'ü': G('#..# .... #..# #..# #..# .###'), 'ů': G('.##. .##. #..# #..# #..# .###'),
+  'ñ': G('.#.# #.#. ###. #..# #..# #..#'), 'ń': G('..#. .#.. ###. #..# #..# #..#'), 'ň': G('#..# .##. ###. #..# #..# #..#'),
+  'ć': G('..# .#. .## #.. #.. .##'), 'č': G('#.# .#. .## #.. #.. .##'), 'ś': G('..# .#. .## #.. ..# ##.'),
+  'š': G('#.# .#. .## #.. ..# ##.'), 'ź': G('..# .#. ### ..# #.. ###'), 'ż': G('.#. ... ### ..# #.. ###'),
+  'ž': G('#.# .#. ### ..# #.. ###'), 'ř': G('#.# .#. #.# ##. #.. #..'), 'ý': G('..#. .#.. #..# #..# .### ...# .##.'),
+  'ÿ': G('#..# .... #..# #..# .### ...# .##.'), 'Á': G('..#. .##. #..# #### #..# #..#'), 'À': G('.#.. .##. #..# #### #..# #..#'),
+  'Â': G('.##. .##. #..# #### #..# #..#'), 'Ä': G('#..# .##. #..# #### #..# #..#'), 'Å': G('.##. .##. #..# #### #..# #..#'),
+  'Ã': G('#### .##. #..# #### #..# #..#'), 'É': G('..#. #### #... ###. #... ####'), 'È': G('.#.. #### #... ###. #... ####'),
+  'Ê': G('.##. #### #... ###. #... ####'), 'Ë': G('#..# #### #... ###. #... ####'), 'Ě': G('.#.# #### #... ###. #... ####'),
+  'Í': G('..# ### .#. .#. .#. ###'), 'Ì': G('#.. ### .#. .#. .#. ###'), 'Î': G('### ### .#. .#. .#. ###'),
+  'Ï': G('#.# ### .#. .#. .#. ###'), 'Ó': G('..#. .##. #..# #..# #..# .##.'), 'Ò': G('.#.. .##. #..# #..# #..# .##.'),
+  'Ô': G('.##. .##. #..# #..# #..# .##.'), 'Ö': G('#..# .##. #..# #..# #..# .##.'), 'Õ': G('#### .##. #..# #..# #..# .##.'),
+  'Ú': G('..#. #..# #..# #..# #..# .##.'), 'Ù': G('.#.. #..# #..# #..# #..# .##.'), 'Û': G('.##. #..# #..# #..# #..# .##.'),
+  'Ü': G('#..# #..# #..# #..# #..# .##.'), 'Ů': G('.##. #..# #..# #..# #..# .##.'), 'Ñ': G('#### #..# ##.# #.## #..# #..#'),
+  'Ń': G('..#. #..# ##.# #.## #..# #..#'), 'Ň': G('.#.# #..# ##.# #.## #..# #..#'), 'Ć': G('..#. .### #... #... #... .###'),
+  'Č': G('.#.# .### #... #... #... .###'), 'Ś': G('..#. .### #... .##. ...# ###.'), 'Š': G('.#.# .### #... .##. ...# ###.'),
+  'Ź': G('..#. #### ..#. .#.. #... ####'), 'Ż': G('.#.. #### ..#. .#.. #... ####'), 'Ž': G('.#.# #### ..#. .#.. #... ####'),
+  'Ř': G('.#.# ###. #..# ###. #.#. #..#'), 'Ď': G('.#.# ###. #..# #..# #..# ###.'), 'Ť': G('.#.#. ##### ..#.. ..#.. ..#.. ..#..'),
+  'Ý': G('...#. #...# .#.#. ..#.. ..#.. ..#..'), 'Ÿ': G('#...# #...# .#.#. ..#.. ..#.. ..#..'), 'í': G('..# .#. .#. .#. .#. .#.'),
+  'ì': G('#.. .#. .#. .#. .#. .#.'), 'î': G('.#. #.# .#. .#. .#. .#.'), 'ï': G('#.# ... .#. .#. .#. .#.'),
+  'ą': G('.... .... .### #..# #..# .### ...#'), 'ę': G('.... .... .##. #### #... .### ..#.'), 'ç': G('... ... .## #.. #.. .## .#.'),
+  'Ą': G('.##. #..# #..# #### #..# #..# ...#'), 'Ę': G('#### #... ###. #... #... #### ..#.'), 'Ç': G('.### #... #... #... #... .### .#..'),
+  'ł': G('.#. .#. .## ##. .#. ..#'), 'Ł': G('.#.. .#.. .### ##.. .#.. .###'), 'ď': G('...#.# ...#.. .###.. #..#.. #..#.. .###..'),
+  'ť': G('.#.# .#.. ###. .#.. .#.. ..#.'), 'ß': G('.##. #..# #.#. #..# #..# #.#. #...'), 'ø': G('.... .... .### #.## ##.# ###.'),
+  'Ø': G('.### #.## #.## ##.# ##.# ###.'), 'æ': G('....... ....... .#####. #..#### #..#... .######'), 'œ': G('....... ....... .##.##. #..#### #..#... .##.###'),
+  'Æ': G('.###### #..#... #..###. ####... #..#... #..####'), 'Œ': G('.###### #..#... #..###. #..#... #..#... .######'), '¿': G('..#. .... ..#. .#.. #..# .##.'),
+  '¡': G('# . # # # #'), '«': G('.... .... .#.# #.#. .#.# ....'), '»': G('.... .... #.#. .#.# #.#. ....'),
+  'ŕ': G('..# .#. #.# ##. #.. #..'), 'ő': G('.#.# .#.# .##. #..# #..# .##.'), 'ű': G('.#.# .#.# #..# #..# #..# .###'),
+  'ă': G('#..# .##. .### #..# #..# .###'), 'ğ': G('#..# .##. .### #..# .### ...# ###.'), 'ā': G('#### .... .### #..# #..# .###'),
+  'ē': G('#### .... .##. #### #... .###'), 'ū': G('#### .... #..# #..# #..# .###'), 'ģ': G('..#. .#.. .### #..# .### ...# ###.'),
+  'ė': G('.#.. .... .##. #### #... .###'), 'ċ': G('.#. ... .## #.. #.. .##'), 'ġ': G('.#.. .... .### #..# .### ...# ###.'),
+  'ŵ': G('..#.. .#.#. #...# #.#.# #.#.# .#.#.'), 'ŷ': G('.##. #..# #..# #..# .### ...# .##.'), 'ĉ': G('.#. #.# .## #.. #.. .##'),
+  'ĝ': G('.##. #..# .### #..# .### ...# ###.'), 'ŝ': G('.#. #.# .## #.. ..# ##.'), 'ŭ': G('#..# .##. #..# #..# #..# .###'),
+  'Ĺ': G('..#. #... #... #... #... ####'), 'Ŕ': G('..#. ###. #..# ###. #.#. #..#'), 'Ő': G('.#.# .##. #..# #..# #..# .##.'),
+  'Ű': G('.#.# #..# #..# #..# #..# .##.'), 'Ă': G('#..# .##. #..# #### #..# #..#'), 'Ğ': G('#..# .### #... #.## #..# .###'),
+  'İ': G('.#. ### .#. .#. .#. ###'), 'Ā': G('#### .##. #..# #### #..# #..#'), 'Ē': G('#### #### #... ###. #... ####'),
+  'Ī': G('### ### .#. .#. .#. ###'), 'Ū': G('#### #..# #..# #..# #..# .##.'), 'Ė': G('.#.. #### #... ###. #... ####'),
+  'Ċ': G('.#.. .### #... #... #... .###'), 'Ġ': G('.#.. .### #... #.## #..# .###'), 'Ŵ': G('.###. #...# #...# #.#.# ##.## #...#'),
+  'Ĉ': G('.##. .### #... #... #... .###'), 'Ĝ': G('.##. .### #... #.## #..# .###'), 'Ĥ': G('.##. #..# #..# #### #..# #..#'),
+  'Ĵ': G('.##. ...# ...# ...# #..# .##.'), 'Ŝ': G('.##. .### #... .##. ...# ###.'), 'Ŭ': G('#..# #..# #..# #..# #..# .##.'),
+  'Ŷ': G('.###. #...# .#.#. ..#.. ..#.. ..#..'), 'ș': G('... ... .## #.. ..# ##. .#.'), 'ş': G('... ... .## #.. ..# ##. .#.'),
+  'ț': G('.#. .#. ### .#. .#. ..# .#.'), 'ķ': G('#.. #.. #.# ##. #.# #.# .#.'), 'ļ': G('#. #. #. #. #. .# #.'),
+  'ņ': G('.... .... ###. #..# #..# #..# .#..'), 'į': G('#. .. #. #. #. #. .#'), 'ų': G('.... .... #..# #..# #..# .### ...#'),
+  'Ș': G('.### #... .##. ...# ...# ###. .#..'), 'Ş': G('.### #... .##. ...# ...# ###. .#..'), 'Ț': G('##### ..#.. ..#.. ..#.. ..#.. ..#.. ..#..'),
+  'Ģ': G('.### #... #... #.## #..# .### ..#.'), 'Ķ': G('#..# #.#. ##.. #.#. #..# #..# .#..'), 'Ļ': G('#... #... #... #... #... #### .#..'),
+  'Ņ': G('#..# ##.# #.## #..# #..# #..# .#..'), 'Į': G('### .#. .#. .#. .#. ### ..#'), 'Ų': G('#..# #..# #..# #..# #..# .##. ..#.'),
+  'ð': G('.#.# ..#. .### #..# #..# .##.'), 'Ð': G('.###. .#..# ###.# .#..# .#..# .###.'), 'þ': G('#... #... ###. #..# #..# ###. #...'),
+  'Þ': G('#... ###. #..# #..# ###. #...'), 'đ': G('...#. ..### .###. #..#. #..#. .###.'), 'Đ': G('.###. .#..# ###.# .#..# .#..# .###.'),
+  'ĺ': G('..# #.. #.. #.. #.. .#.'), 'ľ': G('#.# #.# #.. #.. #.. .#.'), 'Ľ': G('#.#. #.#. #... #... #... ####'),
+  'ı': G('. . # # # #'), 'ī': G('### ... .#. .#. .#. .#.'), 'ə': G('.... .... ###. ...# #### .##.'),
+  'Ə': G('.##. ...# #### #..# #..# .##.'), 'ħ': G('#... ##.. #... ###. #..# #..#'), 'Ħ': G('#..# #### #..# #### #..# #..#'),
+  'ĥ': G('.#.. #.#. #... ###. #..# #..#'), 'ĵ': G('.#. #.# ..# ..# ..# ..# ##.'), '·': G('. . . # . .'),
+  '␣': G('.... .... .... .... #..# ####'),
+};
+function glyphW(ch) { return (PIP[ch] || PIP['?'] || PIP[' '])[0].length; }
+function textW(s) { let w = 0; for (const ch of s) w += glyphW(ch) + 1; return Math.max(0, w - 1); }
+function text(x, y, s, c = 1) {
+  for (const ch of s) {
+    const g = PIP[ch] || PIP[' '];
+    g.forEach((row, j) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') px(x + i, y + 1 + j, c); });
+    x += g[0].length + 1;
+  }
+  return x;
+}
+function textR(xr, y, s, c = 1) { text(xr - textW(s), y, s, c); }
+
+// ---- "Facet": chamfered display numerals, stroked with a 2x2 pen on a 9x17 grid (glyph 10x18) ----
+const FACET = {
+  0: [[[2,0],[6,0],[8,2],[8,14],[6,16],[2,16],[0,14],[0,2],[2,0]]],
+  1: [[[1,3],[4,0],[4,16]], [[1,16],[7,16]]],
+  2: [[[0,2],[2,0],[6,0],[8,2],[8,6],[0,14],[0,16],[8,16]]],
+  3: [[[0,2],[2,0],[6,0],[8,2],[8,6],[6,8],[3,8]], [[6,8],[8,10],[8,14],[6,16],[2,16],[0,14]]],
+  4: [[[6,16],[6,0],[0,11],[8,11]]],
+  5: [[[8,0],[0,0],[0,7],[6,7],[8,9],[8,14],[6,16],[2,16],[0,14]]],
+  6: [[[7,0],[2,0],[0,2],[0,14],[2,16],[6,16],[8,14],[8,9],[6,7],[0,7]]],
+  7: [[[0,0],[8,0],[8,2],[3,16]]],
+  8: [[[2,0],[6,0],[8,2],[8,5],[6,7],[2,7],[0,5],[0,2],[2,0]], [[2,7],[0,9],[0,14],[2,16],[6,16],[8,14],[8,9],[6,7]]],
+  9: [[[1,16],[6,16],[8,14],[8,2],[6,0],[2,0],[0,2],[0,7],[2,9],[8,9]]],
+  '-': [[[2,8],[6,8]]],
+};
+function pen(x, y) { fill(x, y, 2, 2, 1); }
+function line(x0, y0, x1, y1) {
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let e = dx + dy;
+  for (;;) { pen(x0, y0); if (x0 === x1 && y0 === y1) break; const e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } }
+}
+const FACET_ADV = 13, FACET_DOT = 5;
+function bigW(s) { let w = 0; for (const ch of s) w += ch === '.' ? FACET_DOT : FACET_ADV; return w - 3; }
+function big(x, top, s) {
+  for (const ch of s) {
+    if (ch === '.') { fill(x + 1, top + 16, 2, 2, 1); x += FACET_DOT; continue; }
+    for (const pl of FACET[ch] || []) for (let i = 1; i < pl.length; i++) line(x + pl[i - 1][0], top + pl[i - 1][1], x + pl[i][0], top + pl[i][1]);
+    x += FACET_ADV;
+  }
+}
+function icon(x, y, rows, c = 1) { rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === '#') px(x + i, y + j, c); }); }
+
+const ICONS = {
+  menu:     ['#######', '.......', '#######', '.......', '#######', '.......', '.......', '.......'],
+  bands:    ['.......', '.#...#.', '#.#.#.#', '...#...', '.......', '#.#.#.#', '.#...#.', '.......'],
+  mode:     ['.......', '..###..', '.#...#.', '.#####.', '.#...#.', '.#...#.', '.......', '.......'],
+  presets:  ['...#...', '...#...', '#######', '.#####.', '..###..', '.##.##.', '.#...#.', '.......'],
+  steps:    ['.....##', '.....#.', '...###.', '...#...', '.###...', '.#.....', '##.....', '.......'],
+  bw:       ['...#...', '..#.#..', '..#.#..', '.#...#.', '.#...#.', '#.....#', '#.....#', '.......'],
+  seek:     ['.......', '#..#...', '##.##..', '#######', '##.##..', '#..#...', '.......', '.......'],
+  settings: ['...#...', '.#####.', '.#...#.', '##.#.##', '.#...#.', '.#####.', '...#...', '.......'],
+  volume:   ['...#...', '..##...', '####.#.', '####..#', '####.#.', '..##...', '...#...', '.......'],
+  muted:    ['..#....', '.##....', '###.#.#', '###..#.', '###.#.#', '.##....', '..#....', '.......'],
+  wifi:     ['.#####.', '#.....#', '..###..', '.#...#.', '...#...', '...#...', '.......', '.......'],
+};
+
+// ---- UI strings: one table per language, by key. LANGS lists each language by its own name. ----
+const LANGS = [["en", "English"], ["nb", "Norsk"], ["sv", "Svenska"], ["da", "Dansk"], ["de", "Deutsch"], ["fr", "Français"], ["es", "Español"], ["it", "Italiano"], ["nl", "Nederlands"], ["pl", "Polski"], ["cs", "Čeština"], ["pt", "Português"], ["fi", "Suomi"], ["af", "Afrikaans"], ["ca", "Català"], ["gl", "Galego"], ["eu", "Euskara"], ["ga", "Gaeilge"], ["sq", "Shqip"], ["id", "Bahasa Indonesia"], ["ms", "Bahasa Melayu"], ["sw", "Kiswahili"], ["tl", "Tagalog"], ["wa", "Walon"], ["is", "Íslenska"], ["fo", "Føroyskt"], ["et", "Eesti"], ["sk", "Slovenčina"], ["hr", "Hrvatski"], ["bs", "Bosanski"], ["sl", "Slovenščina"], ["sr", "Srpski"], ["hu", "Magyar"], ["ro", "Română"], ["tr", "Türkçe"], ["az", "Azərbaycanca"], ["lv", "Latviešu"], ["lt", "Lietuvių"], ["mt", "Malti"], ["cy", "Cymraeg"], ["eo", "Esperanto"]];
+const STRINGS = {
+  "en": {"band": "Band", "mode": "Mode", "step": "Step", "bandwidth": "Bandwidth", "volume": "Volume", "seek": "Seek", "val_mute": "mute", "home_step": "step", "home_mute": "Mute", "seek_up": "Seek up", "seek_down": "Seek down", "only_fm": "only on FM", "lower_ssb": "lower SSB", "upper_ssb": "upper SSB", "status": "Status", "not_joined": "not joined", "wifi": "WiFi", "agc": "AGC", "on": "on", "off": "off", "contrast": "Contrast", "light": "Light", "side_button": "Side button", "about": "About", "language": "Language", "side_mute": "Mute", "side_next": "Next preset", "side_back": "Back", "val_preset": "preset", "val_back": "back", "joined_s": "Joined %s", "not_joined_cap": "Not joined", "access_point": "Access point:", "battery_d": "Battery %d%%", "password_for": "Password for %s", "group_edit": "edit", "toast_muted": "Muted", "toast_sound": "Sound on", "toast_saved": "Saved as preset %d", "toast_full": "Presets full", "toast_none": "No presets", "toast_preset": "Preset %d %s", "toast_joining": "Joining %s", "toast_no_seek": "No seek in SSB", "toast_cancelled": "Update cancelled", "confirm_title": "Install firmware?", "confirm_press": "Press: install", "confirm_long": "Long press: cancel", "installing": "Installing", "battery_empty": "Battery empty", "web_frequency": "Frequency", "web_tune": "Tune", "web_signal": "Signal", "web_presets": "Presets", "web_add": "Add current", "web_name": "Name", "web_rename": "Rename", "web_delete": "Delete", "web_up": "Up", "web_down": "Down", "web_network": "Network", "web_password": "Password", "web_join": "Join", "web_firmware": "Firmware", "web_upload": "Upload", "web_press": "Press the knob on the radio within 30 s to install.", "web_installing": "Installing. The radio restarts.", "web_failed": "Failed", "web_offline": "No connection"},
+  "nb": {"band": "Bånd", "mode": "Modus", "step": "Steg", "bandwidth": "Båndbredde", "volume": "Volum", "seek": "Søk", "val_mute": "demp", "home_step": "steg", "home_mute": "Demp", "seek_up": "Søk opp", "seek_down": "Søk ned", "only_fm": "kun på FM", "lower_ssb": "nedre SSB", "upper_ssb": "øvre SSB", "status": "Status", "not_joined": "ikke tilkoblet", "wifi": "WiFi", "agc": "AGC", "on": "på", "off": "av", "contrast": "Kontrast", "light": "Lys", "side_button": "Sideknapp", "about": "Om", "language": "Språk", "side_mute": "Demp", "side_next": "Neste forvalg", "side_back": "Tilbake", "val_preset": "forvalg", "val_back": "tilbake", "joined_s": "Tilkoblet %s", "not_joined_cap": "Ikke tilkoblet", "access_point": "Tilgangspunkt:", "battery_d": "Batteri %d%%", "password_for": "Passord for %s", "group_edit": "endre", "toast_muted": "Dempet", "toast_sound": "Lyd på", "toast_saved": "Lagret som forvalg %d", "toast_full": "Forvalg fulle", "toast_none": "Ingen forvalg", "toast_preset": "Forvalg %d %s", "toast_joining": "Kobler til %s", "toast_no_seek": "Søk virker ikke i SSB", "toast_cancelled": "Oppdatering avbrutt", "confirm_title": "Installere fastvare?", "confirm_press": "Trykk: installer", "confirm_long": "Langt trykk: avbryt", "installing": "Installerer", "battery_empty": "Batteriet er tomt", "web_frequency": "Frekvens", "web_tune": "Still inn", "web_signal": "Signal", "web_presets": "Forvalg", "web_add": "Legg til gjeldende", "web_name": "Navn", "web_rename": "Gi nytt navn", "web_delete": "Slett", "web_up": "Opp", "web_down": "Ned", "web_network": "Nettverk", "web_password": "Passord", "web_join": "Koble til", "web_firmware": "Fastvare", "web_upload": "Last opp", "web_press": "Trykk på knotten på radioen innen 30 s for å installere.", "web_installing": "Installerer. Radioen starter på nytt.", "web_failed": "Mislyktes", "web_offline": "Ingen tilkobling"},
+  "sv": {"band": "Band", "mode": "Läge", "step": "Steg", "bandwidth": "Bandbredd", "volume": "Volym", "seek": "Sök", "val_mute": "tyst", "home_step": "steg", "home_mute": "Tyst", "seek_up": "Sök uppåt", "seek_down": "Sök nedåt", "only_fm": "bara på FM", "lower_ssb": "nedre SSB", "upper_ssb": "övre SSB", "status": "Status", "not_joined": "inte ansluten", "wifi": "WiFi", "agc": "AGC", "on": "på", "off": "av", "contrast": "Kontrast", "light": "Ljus", "side_button": "Sidoknapp", "about": "Om", "language": "Språk", "side_mute": "Tyst", "side_next": "Nästa förval", "side_back": "Tillbaka", "val_preset": "förval", "val_back": "tillbaka", "joined_s": "Ansluten till %s", "not_joined_cap": "Inte ansluten", "access_point": "Åtkomstpunkt:", "battery_d": "Batteri %d%%", "password_for": "Lösenord för %s", "group_edit": "red.", "toast_muted": "Ljud av", "toast_sound": "Ljud på", "toast_saved": "Sparad som förval %d", "toast_full": "Förvalen är fulla", "toast_none": "Inga förval", "toast_preset": "Förval %d %s", "toast_joining": "Ansluter till %s", "toast_no_seek": "Ingen sökning i SSB", "toast_cancelled": "Uppdatering avbruten", "confirm_title": "Installera firmware?", "confirm_press": "Tryck: installera", "confirm_long": "Långt tryck: avbryt", "installing": "Installerar", "battery_empty": "Batteriet är slut", "web_frequency": "Frekvens", "web_tune": "Ställ in", "web_signal": "Signal", "web_presets": "Förval", "web_add": "Lägg till aktuell", "web_name": "Namn", "web_rename": "Byt namn", "web_delete": "Radera", "web_up": "Upp", "web_down": "Ned", "web_network": "Nätverk", "web_password": "Lösenord", "web_join": "Anslut", "web_firmware": "Firmware", "web_upload": "Ladda upp", "web_press": "Tryck på ratten på radion inom 30 s för att installera.", "web_installing": "Installerar. Radion startar om.", "web_failed": "Misslyckades", "web_offline": "Ingen anslutning"},
+  "da": {"band": "Bånd", "mode": "Tilstand", "step": "Trin", "bandwidth": "Båndbredde", "volume": "Lydstyrke", "seek": "Søg", "val_mute": "lydløs", "home_step": "trin", "home_mute": "Stille", "seek_up": "Søg op", "seek_down": "Søg ned", "only_fm": "kun på FM", "lower_ssb": "nedre SSB", "upper_ssb": "øvre SSB", "status": "Status", "not_joined": "ikke forbundet", "wifi": "WiFi", "agc": "AGC", "on": "til", "off": "fra", "contrast": "Kontrast", "light": "Lys", "side_button": "Sideknap", "about": "Om", "language": "Sprog", "side_mute": "Lydløs", "side_next": "Næste forvalg", "side_back": "Tilbage", "val_preset": "forvalg", "val_back": "tilbage", "joined_s": "Forbundet til %s", "not_joined_cap": "Ikke forbundet", "access_point": "Adgangspunkt:", "battery_d": "Batteri %d%%", "password_for": "Kode til %s", "group_edit": "rediger", "toast_muted": "Lydløs", "toast_sound": "Lyd til", "toast_saved": "Gemt som forvalg %d", "toast_full": "Forvalg er fulde", "toast_none": "Ingen forvalg", "toast_preset": "Forvalg %d %s", "toast_joining": "Forbinder til %s", "toast_no_seek": "Ingen søgning i SSB", "toast_cancelled": "Opdatering annulleret", "confirm_title": "Installer firmware?", "confirm_press": "Tryk: installer", "confirm_long": "Langt tryk: annuller", "installing": "Installerer", "battery_empty": "Batteriet er tomt", "web_frequency": "Frekvens", "web_tune": "Indstil", "web_signal": "Signal", "web_presets": "Forvalg", "web_add": "Tilføj aktuel", "web_name": "Navn", "web_rename": "Omdøb", "web_delete": "Slet", "web_up": "Op", "web_down": "Ned", "web_network": "Netværk", "web_password": "Adgangskode", "web_join": "Forbind", "web_firmware": "Firmware", "web_upload": "Upload", "web_press": "Tryk på knappen på radioen inden for 30 s for at installere.", "web_installing": "Installerer. Radioen genstarter.", "web_failed": "Mislykkedes", "web_offline": "Ingen forbindelse"},
+  "de": {"band": "Band", "mode": "Modus", "step": "Schritt", "bandwidth": "Bandbreite", "volume": "Lautstärke", "seek": "Suchlauf", "val_mute": "stumm", "home_step": "Schritt", "home_mute": "Still", "seek_up": "Suchlauf hoch", "seek_down": "Suchlauf runter", "only_fm": "nur bei FM", "lower_ssb": "unteres SSB", "upper_ssb": "oberes SSB", "status": "Status", "not_joined": "nicht verbunden", "wifi": "WLAN", "agc": "AGC", "on": "an", "off": "aus", "contrast": "Kontrast", "light": "Licht", "side_button": "Seitentaste", "about": "Info", "language": "Sprache", "side_mute": "Stumm", "side_next": "Nächster Speicher", "side_back": "Zurück", "val_preset": "Speicher", "val_back": "zurück", "joined_s": "Verbunden mit %s", "not_joined_cap": "Nicht verbunden", "access_point": "Zugangspunkt:", "battery_d": "Akku %d%%", "password_for": "Passwort %s", "group_edit": "bearb.", "toast_muted": "Stumm", "toast_sound": "Ton an", "toast_saved": "Auf Speicher %d gesichert", "toast_full": "Speicher voll", "toast_none": "Keine Speicher", "toast_preset": "Speicher %d %s", "toast_joining": "Verbinde mit %s", "toast_no_seek": "Kein Suchlauf bei SSB", "toast_cancelled": "Update abgebrochen", "confirm_title": "Firmware installieren?", "confirm_press": "Drücken: installieren", "confirm_long": "Lang drücken: abbrechen", "installing": "Wird installiert", "battery_empty": "Akku leer", "web_frequency": "Frequenz", "web_tune": "Einstellen", "web_signal": "Signal", "web_presets": "Senderspeicher", "web_add": "Aktuellen hinzufügen", "web_name": "Name", "web_rename": "Umbenennen", "web_delete": "Löschen", "web_up": "Hoch", "web_down": "Runter", "web_network": "Netzwerk", "web_password": "Passwort", "web_join": "Verbinden", "web_firmware": "Firmware", "web_upload": "Hochladen", "web_press": "Drücken Sie innerhalb von 30 s den Knopf am Radio, um zu installieren.", "web_installing": "Wird installiert. Das Radio startet neu.", "web_failed": "Fehlgeschlagen", "web_offline": "Keine Verbindung"},
+  "fr": {"band": "Bande", "mode": "Mode", "step": "Pas", "bandwidth": "Bande passante", "volume": "Volume", "seek": "Recherche", "val_mute": "muet", "home_step": "pas", "home_mute": "Muet", "seek_up": "Recherche haut", "seek_down": "Recherche bas", "only_fm": "FM uniquement", "lower_ssb": "SSB inférieure", "upper_ssb": "SSB supérieure", "status": "État", "not_joined": "non connecté", "wifi": "WiFi", "agc": "AGC", "on": "oui", "off": "non", "contrast": "Contraste", "light": "Lumière", "side_button": "Bouton latéral", "about": "À propos", "language": "Langue", "side_mute": "Muet", "side_next": "Préréglage suivant", "side_back": "Retour", "val_preset": "préréglage", "val_back": "retour", "joined_s": "Connecté à %s", "not_joined_cap": "Non connecté", "access_point": "Point d'accès :", "battery_d": "Batterie %d %%", "password_for": "Mot de passe %s", "group_edit": "édit.", "toast_muted": "Son coupé", "toast_sound": "Son activé", "toast_saved": "Enregistré en préréglage %d", "toast_full": "Préréglages pleins", "toast_none": "Aucun préréglage", "toast_preset": "Préréglage %d %s", "toast_joining": "Connexion à %s", "toast_no_seek": "Pas de recherche en SSB", "toast_cancelled": "Mise à jour annulée", "confirm_title": "Installer le firmware ?", "confirm_press": "Appui : installer", "confirm_long": "Appui long : annuler", "installing": "Installation", "battery_empty": "Batterie vide", "web_frequency": "Fréquence", "web_tune": "Accorder", "web_signal": "Signal", "web_presets": "Préréglages", "web_add": "Ajouter l'actuelle", "web_name": "Nom", "web_rename": "Renommer", "web_delete": "Supprimer", "web_up": "Monter", "web_down": "Descendre", "web_network": "Réseau", "web_password": "Mot de passe", "web_join": "Se connecter", "web_firmware": "Firmware", "web_upload": "Envoyer", "web_press": "Appuyez sur le bouton de la radio dans les 30 s pour installer.", "web_installing": "Installation. La radio redémarre.", "web_failed": "Échec", "web_offline": "Pas de connexion"},
+  "es": {"band": "Banda", "mode": "Modo", "step": "Paso", "bandwidth": "Ancho de banda", "volume": "Volumen", "seek": "Búsqueda", "val_mute": "silencio", "home_step": "paso", "home_mute": "Mudo", "seek_up": "Buscar arriba", "seek_down": "Buscar abajo", "only_fm": "solo en FM", "lower_ssb": "SSB inferior", "upper_ssb": "SSB superior", "status": "Estado", "not_joined": "no conectado", "wifi": "WiFi", "agc": "AGC", "on": "sí", "off": "no", "contrast": "Contraste", "light": "Luz", "side_button": "Botón lateral", "about": "Acerca de", "language": "Idioma", "side_mute": "Silencio", "side_next": "Siguiente memoria", "side_back": "Atrás", "val_preset": "memoria", "val_back": "atrás", "joined_s": "Conectado a %s", "not_joined_cap": "No conectado", "access_point": "Punto de acceso:", "battery_d": "Batería %d%%", "password_for": "Clave de %s", "group_edit": "editar", "toast_muted": "Silenciado", "toast_sound": "Sonido activado", "toast_saved": "Guardado en memoria %d", "toast_full": "Memorias llenas", "toast_none": "Sin memorias", "toast_preset": "Memoria %d %s", "toast_joining": "Conectando a %s", "toast_no_seek": "Sin búsqueda en SSB", "toast_cancelled": "Actualización cancelada", "confirm_title": "¿Instalar firmware?", "confirm_press": "Pulsar: instalar", "confirm_long": "Pulsación larga: cancelar", "installing": "Instalando", "battery_empty": "Batería agotada", "web_frequency": "Frecuencia", "web_tune": "Sintonizar", "web_signal": "Señal", "web_presets": "Memorias", "web_add": "Añadir actual", "web_name": "Nombre", "web_rename": "Renombrar", "web_delete": "Eliminar", "web_up": "Subir", "web_down": "Bajar", "web_network": "Red", "web_password": "Contraseña", "web_join": "Conectar", "web_firmware": "Firmware", "web_upload": "Subir", "web_press": "Pulsa el mando de la radio antes de 30 s para instalar.", "web_installing": "Instalando. La radio se reinicia.", "web_failed": "Error", "web_offline": "Sin conexión"},
+  "it": {"band": "Banda", "mode": "Modo", "step": "Passo", "bandwidth": "Larghezza banda", "volume": "Volume", "seek": "Ricerca", "val_mute": "muto", "home_step": "passo", "home_mute": "Muto", "seek_up": "Ricerca su", "seek_down": "Ricerca giù", "only_fm": "solo in FM", "lower_ssb": "SSB inferiore", "upper_ssb": "SSB superiore", "status": "Stato", "not_joined": "non connesso", "wifi": "WiFi", "agc": "AGC", "on": "on", "off": "off", "contrast": "Contrasto", "light": "Luce", "side_button": "Tasto laterale", "about": "Info", "language": "Lingua", "side_mute": "Muto", "side_next": "Memoria successiva", "side_back": "Indietro", "val_preset": "memoria", "val_back": "indietro", "joined_s": "Connesso a %s", "not_joined_cap": "Non connesso", "access_point": "Access point:", "battery_d": "Batteria %d%%", "password_for": "Password per %s", "group_edit": "modif", "toast_muted": "Audio disattivato", "toast_sound": "Audio attivo", "toast_saved": "Salvato in memoria %d", "toast_full": "Memorie piene", "toast_none": "Nessuna memoria", "toast_preset": "Memoria %d %s", "toast_joining": "Connessione a %s", "toast_no_seek": "Niente ricerca in SSB", "toast_cancelled": "Aggiornamento annullato", "confirm_title": "Installare il firmware?", "confirm_press": "Premi: installa", "confirm_long": "Pressione lunga: annulla", "installing": "Installazione", "battery_empty": "Batteria scarica", "web_frequency": "Frequenza", "web_tune": "Sintonizza", "web_signal": "Segnale", "web_presets": "Memorie", "web_add": "Aggiungi attuale", "web_name": "Nome", "web_rename": "Rinomina", "web_delete": "Elimina", "web_up": "Su", "web_down": "Giù", "web_network": "Rete", "web_password": "Password", "web_join": "Connetti", "web_firmware": "Firmware", "web_upload": "Carica", "web_press": "Premi la manopola della radio entro 30 s per installare.", "web_installing": "Installazione. La radio si riavvia.", "web_failed": "Non riuscito", "web_offline": "Nessuna connessione"},
+  "nl": {"band": "Band", "mode": "Modus", "step": "Stap", "bandwidth": "Bandbreedte", "volume": "Volume", "seek": "Zoeken", "val_mute": "stil", "home_step": "stap", "home_mute": "Stil", "seek_up": "Zoek omhoog", "seek_down": "Zoek omlaag", "only_fm": "alleen op FM", "lower_ssb": "onderste SSB", "upper_ssb": "bovenste SSB", "status": "Status", "not_joined": "niet verbonden", "wifi": "WiFi", "agc": "AGC", "on": "aan", "off": "uit", "contrast": "Contrast", "light": "Licht", "side_button": "Zijknop", "about": "Over", "language": "Taal", "side_mute": "Dempen", "side_next": "Volgende voorkeuze", "side_back": "Terug", "val_preset": "voorkeuze", "val_back": "terug", "joined_s": "Verbonden met %s", "not_joined_cap": "Niet verbonden", "access_point": "Toegangspunt:", "battery_d": "Batterij %d%%", "password_for": "Wachtwoord %s", "group_edit": "wijzig", "toast_muted": "Gedempt", "toast_sound": "Geluid aan", "toast_saved": "Opgeslagen als voorkeuze %d", "toast_full": "Voorkeuzes vol", "toast_none": "Geen voorkeuzes", "toast_preset": "Voorkeuze %d %s", "toast_joining": "Verbinden met %s", "toast_no_seek": "Geen zoeken in SSB", "toast_cancelled": "Update geannuleerd", "confirm_title": "Firmware installeren?", "confirm_press": "Druk: installeren", "confirm_long": "Lang drukken: annuleren", "installing": "Installeren", "battery_empty": "Batterij leeg", "web_frequency": "Frequentie", "web_tune": "Afstemmen", "web_signal": "Signaal", "web_presets": "Voorkeuzes", "web_add": "Huidige toevoegen", "web_name": "Naam", "web_rename": "Hernoemen", "web_delete": "Verwijderen", "web_up": "Omhoog", "web_down": "Omlaag", "web_network": "Netwerk", "web_password": "Wachtwoord", "web_join": "Verbinden", "web_firmware": "Firmware", "web_upload": "Uploaden", "web_press": "Druk binnen 30 s op de knop van de radio om te installeren.", "web_installing": "Bezig met installeren. De radio herstart.", "web_failed": "Mislukt", "web_offline": "Geen verbinding"},
+  "pl": {"band": "Pasmo", "mode": "Tryb", "step": "Krok", "bandwidth": "Szerokość pasma", "volume": "Głośność", "seek": "Szukanie", "val_mute": "wycisz", "home_step": "krok", "home_mute": "Cisza", "seek_up": "Szukaj w górę", "seek_down": "Szukaj w dół", "only_fm": "tylko na FM", "lower_ssb": "dolna SSB", "upper_ssb": "górna SSB", "status": "Status", "not_joined": "niepołączony", "wifi": "WiFi", "agc": "AGC", "on": "wł.", "off": "wył.", "contrast": "Kontrast", "light": "Światło", "side_button": "Przycisk boczny", "about": "O radiu", "language": "Język", "side_mute": "Wycisz", "side_next": "Następna pamięć", "side_back": "Wstecz", "val_preset": "pamięć", "val_back": "wstecz", "joined_s": "Połączono z %s", "not_joined_cap": "Brak połączenia", "access_point": "Punkt dostępu:", "battery_d": "Bateria %d%%", "password_for": "Hasło do %s", "group_edit": "edytuj", "toast_muted": "Wyciszono", "toast_sound": "Dźwięk wł.", "toast_saved": "Zapisano w pamięci %d", "toast_full": "Pamięci pełne", "toast_none": "Brak pamięci", "toast_preset": "Pamięć %d %s", "toast_joining": "Łączenie z %s", "toast_no_seek": "Brak szukania w SSB", "toast_cancelled": "Aktualizacja anulowana", "confirm_title": "Zainstalować firmware?", "confirm_press": "Naciśnij: instaluj", "confirm_long": "Przytrzymaj: anuluj", "installing": "Instalowanie", "battery_empty": "Bateria wyczerpana", "web_frequency": "Częstotliwość", "web_tune": "Dostrój", "web_signal": "Sygnał", "web_presets": "Pamięci", "web_add": "Dodaj bieżącą", "web_name": "Nazwa", "web_rename": "Zmień nazwę", "web_delete": "Usuń", "web_up": "W górę", "web_down": "W dół", "web_network": "Sieć", "web_password": "Hasło", "web_join": "Połącz", "web_firmware": "Oprogramowanie", "web_upload": "Prześlij", "web_press": "Naciśnij pokrętło radia w ciągu 30 s, aby zainstalować.", "web_installing": "Instalowanie. Radio uruchomi się ponownie.", "web_failed": "Niepowodzenie", "web_offline": "Brak połączenia"},
+  "cs": {"band": "Pásmo", "mode": "Režim", "step": "Krok", "bandwidth": "Šířka pásma", "volume": "Hlasitost", "seek": "Hledání", "val_mute": "ztlumit", "home_step": "krok", "home_mute": "Ticho", "seek_up": "Hledat nahoru", "seek_down": "Hledat dolů", "only_fm": "jen na FM", "lower_ssb": "dolní SSB", "upper_ssb": "horní SSB", "status": "Stav", "not_joined": "nepřipojeno", "wifi": "WiFi", "agc": "AGC", "on": "zap", "off": "vyp", "contrast": "Kontrast", "light": "Světlo", "side_button": "Boční tlačítko", "about": "O rádiu", "language": "Jazyk", "side_mute": "Ztlumit", "side_next": "Další předvolba", "side_back": "Zpět", "val_preset": "předvolba", "val_back": "zpět", "joined_s": "Připojeno k %s", "not_joined_cap": "Nepřipojeno", "access_point": "Přístupový bod:", "battery_d": "Baterie %d%%", "password_for": "Heslo pro %s", "group_edit": "upravit", "toast_muted": "Ztlumeno", "toast_sound": "Zvuk zapnut", "toast_saved": "Uloženo na předvolbu %d", "toast_full": "Předvolby plné", "toast_none": "Žádné předvolby", "toast_preset": "Předvolba %d %s", "toast_joining": "Připojování k %s", "toast_no_seek": "V SSB nelze hledat", "toast_cancelled": "Aktualizace zrušena", "confirm_title": "Instalovat firmware?", "confirm_press": "Stisk: instalovat", "confirm_long": "Dlouhý stisk: zrušit", "installing": "Instalace", "battery_empty": "Baterie vybitá", "web_frequency": "Frekvence", "web_tune": "Naladit", "web_signal": "Signál", "web_presets": "Předvolby", "web_add": "Přidat aktuální", "web_name": "Název", "web_rename": "Přejmenovat", "web_delete": "Smazat", "web_up": "Nahoru", "web_down": "Dolů", "web_network": "Síť", "web_password": "Heslo", "web_join": "Připojit", "web_firmware": "Firmware", "web_upload": "Nahrát", "web_press": "Stiskněte knoflík na rádiu do 30 s pro instalaci.", "web_installing": "Instalace. Rádio se restartuje.", "web_failed": "Selhalo", "web_offline": "Bez připojení"},
+  "pt": {"band": "Banda", "mode": "Modo", "step": "Passo", "bandwidth": "Largura de banda", "volume": "Volume", "seek": "Procura", "val_mute": "mudo", "home_step": "passo", "home_mute": "Mudo", "seek_up": "Procurar acima", "seek_down": "Procurar abaixo", "only_fm": "só em FM", "lower_ssb": "SSB inferior", "upper_ssb": "SSB superior", "status": "Estado", "not_joined": "não ligado", "wifi": "WiFi", "agc": "AGC", "on": "ligado", "off": "desligado", "contrast": "Contraste", "light": "Luz", "side_button": "Botão lateral", "about": "Sobre", "language": "Idioma", "side_mute": "Silenciar", "side_next": "Memória seguinte", "side_back": "Voltar", "val_preset": "memória", "val_back": "voltar", "joined_s": "Ligado a %s", "not_joined_cap": "Não ligado", "access_point": "Ponto de acesso:", "battery_d": "Bateria %d%%", "password_for": "Senha de %s", "group_edit": "editar", "toast_muted": "Sem som", "toast_sound": "Som ligado", "toast_saved": "Guardado na memória %d", "toast_full": "Memórias cheias", "toast_none": "Sem memórias", "toast_preset": "Memória %d %s", "toast_joining": "A ligar a %s", "toast_no_seek": "Sem procura em SSB", "toast_cancelled": "Atualização cancelada", "confirm_title": "Instalar firmware?", "confirm_press": "Premir: instalar", "confirm_long": "Pressão longa: cancelar", "installing": "A instalar", "battery_empty": "Bateria vazia", "web_frequency": "Frequência", "web_tune": "Sintonizar", "web_signal": "Sinal", "web_presets": "Memórias", "web_add": "Adicionar atual", "web_name": "Nome", "web_rename": "Mudar nome", "web_delete": "Apagar", "web_up": "Subir", "web_down": "Descer", "web_network": "Rede", "web_password": "Senha", "web_join": "Ligar", "web_firmware": "Firmware", "web_upload": "Enviar", "web_press": "Prima o botão do rádio dentro de 30 s para instalar.", "web_installing": "A instalar. O rádio reinicia.", "web_failed": "Falhou", "web_offline": "Sem ligação"},
+  "fi": {"band": "Alue", "mode": "Tila", "step": "Askel", "bandwidth": "Kaistanleveys", "volume": "Äänenvoimakkuus", "seek": "Haku", "val_mute": "mykistys", "home_step": "askel", "home_mute": "Hiljaa", "seek_up": "Haku ylös", "seek_down": "Haku alas", "only_fm": "vain FM:llä", "lower_ssb": "alempi SSB", "upper_ssb": "ylempi SSB", "status": "Yhteys", "not_joined": "ei yhdistetty", "wifi": "WiFi", "agc": "AGC", "on": "päällä", "off": "pois", "contrast": "Kontrasti", "light": "Valo", "side_button": "Sivunäppäin", "about": "Tietoja", "language": "Kieli", "side_mute": "Mykistys", "side_next": "Seuraava muisti", "side_back": "Takaisin", "val_preset": "muisti", "val_back": "takaisin", "joined_s": "Yhdistetty: %s", "not_joined_cap": "Ei yhdistetty", "access_point": "Tukiasema:", "battery_d": "Akku %d%%", "password_for": "Salasana: %s", "group_edit": "muokkaa", "toast_muted": "Mykistetty", "toast_sound": "Ääni päällä", "toast_saved": "Tallennettu muistiin %d", "toast_full": "Muistit täynnä", "toast_none": "Ei muisteja", "toast_preset": "Muisti %d %s", "toast_joining": "Yhdistetään: %s", "toast_no_seek": "Ei hakua SSB:ssä", "toast_cancelled": "Päivitys peruttu", "confirm_title": "Asenna ohjelmisto?", "confirm_press": "Paina: asenna", "confirm_long": "Pitkä painallus: peru", "installing": "Asennetaan", "battery_empty": "Akku tyhjä", "web_frequency": "Taajuus", "web_tune": "Viritä", "web_signal": "Signaali", "web_presets": "Muistipaikat", "web_add": "Lisää nykyinen", "web_name": "Nimi", "web_rename": "Nimeä uudelleen", "web_delete": "Poista", "web_up": "Ylös", "web_down": "Alas", "web_network": "Verkko", "web_password": "Salasana", "web_join": "Yhdistä", "web_firmware": "Laiteohjelmisto", "web_upload": "Lähetä", "web_press": "Paina radion nuppia 30 s:n kuluessa asentaaksesi.", "web_installing": "Asennetaan. Radio käynnistyy uudelleen.", "web_failed": "Epäonnistui", "web_offline": "Ei yhteyttä"},
+  "af": {"band": "Band", "mode": "Modus", "step": "Stap", "bandwidth": "Bandwydte", "volume": "Volume", "seek": "Soek", "val_mute": "stil", "home_step": "stap", "home_mute": "Stil", "seek_up": "Soek op", "seek_down": "Soek af", "only_fm": "net op FM", "lower_ssb": "onderste SSB", "upper_ssb": "boonste SSB", "status": "Status", "not_joined": "nie gekoppel", "wifi": "WiFi", "agc": "AGC", "on": "aan", "off": "af", "contrast": "Kontras", "light": "Lig", "side_button": "Syknoppie", "about": "Oor", "language": "Taal", "side_mute": "Demp", "side_next": "Volgende voorkeur", "side_back": "Terug", "val_preset": "voorkeur", "val_back": "terug", "joined_s": "Gekoppel aan %s", "not_joined_cap": "Nie gekoppel", "access_point": "Toegangspunt:", "battery_d": "Battery %d%%", "password_for": "Wagwoord vir %s", "group_edit": "wysig", "toast_muted": "Gedemp", "toast_sound": "Klank aan", "toast_saved": "Gestoor as voorkeur %d", "toast_full": "Voorkeure vol", "toast_none": "Geen voorkeure", "toast_preset": "Voorkeur %d %s", "toast_joining": "Koppel aan %s", "toast_no_seek": "Geen soek in SSB", "toast_cancelled": "Opdatering gekanselleer", "confirm_title": "Installeer firmware?", "confirm_press": "Druk: installeer", "confirm_long": "Lang druk: kanselleer", "installing": "Installeer tans", "battery_empty": "Battery pap", "web_frequency": "Frekwensie", "web_tune": "Stem in", "web_signal": "Sein", "web_presets": "Voorkeure", "web_add": "Voeg huidige by", "web_name": "Naam", "web_rename": "Hernoem", "web_delete": "Skrap", "web_up": "Op", "web_down": "Af", "web_network": "Netwerk", "web_password": "Wagwoord", "web_join": "Koppel", "web_firmware": "Firmware", "web_upload": "Laai op", "web_press": "Druk die knop op die radio binne 30 s om te installeer.", "web_installing": "Installeer tans. Die radio herbegin.", "web_failed": "Misluk", "web_offline": "Geen verbinding"},
+  "ca": {"band": "Banda", "mode": "Mode", "step": "Pas", "bandwidth": "Amplada de banda", "volume": "Volum", "seek": "Cerca", "val_mute": "silenci", "home_step": "pas", "home_mute": "Mut", "seek_up": "Cerca amunt", "seek_down": "Cerca avall", "only_fm": "només en FM", "lower_ssb": "SSB inferior", "upper_ssb": "SSB superior", "status": "Estat", "not_joined": "no connectat", "wifi": "WiFi", "agc": "AGC", "on": "sí", "off": "no", "contrast": "Contrast", "light": "Llum", "side_button": "Botó lateral", "about": "Quant a", "language": "Idioma", "side_mute": "Silenci", "side_next": "Memòria següent", "side_back": "Enrere", "val_preset": "memòria", "val_back": "enrere", "joined_s": "Connectat a %s", "not_joined_cap": "No connectat", "access_point": "Punt d'accés:", "battery_d": "Bateria %d%%", "password_for": "Clau de %s", "group_edit": "editar", "toast_muted": "Silenciat", "toast_sound": "So activat", "toast_saved": "Desat a la memòria %d", "toast_full": "Memòries plenes", "toast_none": "Cap memòria", "toast_preset": "Memòria %d %s", "toast_joining": "Connectant a %s", "toast_no_seek": "No hi ha cerca en SSB", "toast_cancelled": "Actualització cancel·lada", "confirm_title": "Instal·lar el firmware?", "confirm_press": "Prem: instal·la", "confirm_long": "Prem llarg: cancel·la", "installing": "Instal·lant", "battery_empty": "Bateria esgotada", "web_frequency": "Freqüència", "web_tune": "Sintonitza", "web_signal": "Senyal", "web_presets": "Memòries", "web_add": "Afegeix l'actual", "web_name": "Nom", "web_rename": "Canvia el nom", "web_delete": "Suprimeix", "web_up": "Amunt", "web_down": "Avall", "web_network": "Xarxa", "web_password": "Contrasenya", "web_join": "Connecta", "web_firmware": "Firmware", "web_upload": "Puja", "web_press": "Prem el botó de la ràdio en 30 s per instal·lar.", "web_installing": "Instal·lant. La ràdio es reinicia.", "web_failed": "Error", "web_offline": "Sense connexió"},
+  "gl": {"band": "Banda", "mode": "Modo", "step": "Paso", "bandwidth": "Ancho de banda", "volume": "Volume", "seek": "Busca", "val_mute": "silencio", "home_step": "paso", "home_mute": "Mudo", "seek_up": "Buscar arriba", "seek_down": "Buscar abaixo", "only_fm": "só en FM", "lower_ssb": "SSB inferior", "upper_ssb": "SSB superior", "status": "Estado", "not_joined": "non conectado", "wifi": "WiFi", "agc": "AGC", "on": "si", "off": "non", "contrast": "Contraste", "light": "Luz", "side_button": "Botón lateral", "about": "Acerca de", "language": "Idioma", "side_mute": "Silencio", "side_next": "Memoria seguinte", "side_back": "Atrás", "val_preset": "memoria", "val_back": "atrás", "joined_s": "Conectado a %s", "not_joined_cap": "Non conectado", "access_point": "Punto de acceso:", "battery_d": "Batería %d%%", "password_for": "Clave de %s", "group_edit": "editar", "toast_muted": "Silenciado", "toast_sound": "Son activado", "toast_saved": "Gardado na memoria %d", "toast_full": "Memorias cheas", "toast_none": "Sen memorias", "toast_preset": "Memoria %d %s", "toast_joining": "Conectando a %s", "toast_no_seek": "Sen busca en SSB", "toast_cancelled": "Actualización cancelada", "confirm_title": "Instalar o firmware?", "confirm_press": "Premer: instalar", "confirm_long": "Premer longo: cancelar", "installing": "Instalando", "battery_empty": "Batería esgotada", "web_frequency": "Frecuencia", "web_tune": "Sintonizar", "web_signal": "Sinal", "web_presets": "Memorias", "web_add": "Engadir a actual", "web_name": "Nome", "web_rename": "Renomear", "web_delete": "Eliminar", "web_up": "Subir", "web_down": "Baixar", "web_network": "Rede", "web_password": "Contrasinal", "web_join": "Conectar", "web_firmware": "Firmware", "web_upload": "Cargar", "web_press": "Preme o botón da radio antes de 30 s para instalar.", "web_installing": "Instalando. A radio reiníciase.", "web_failed": "Erro", "web_offline": "Sen conexión"},
+  "eu": {"band": "Banda", "mode": "Modua", "step": "Urratsa", "bandwidth": "Banda-zabalera", "volume": "Bolumena", "seek": "Bilaketa", "val_mute": "isilik", "home_step": "urrats", "home_mute": "Isil", "seek_up": "Bilatu gora", "seek_down": "Bilatu behera", "only_fm": "FMn soilik", "lower_ssb": "beheko SSB", "upper_ssb": "goiko SSB", "status": "Egoera", "not_joined": "konektatu gabe", "wifi": "WiFi", "agc": "AGC", "on": "bai", "off": "ez", "contrast": "Kontrastea", "light": "Argia", "side_button": "Alboko botoia", "about": "Honi buruz", "language": "Hizkuntza", "side_mute": "Isilarazi", "side_next": "Hurrengo memoria", "side_back": "Atzera", "val_preset": "memoria", "val_back": "atzera", "joined_s": "Konektatuta: %s", "not_joined_cap": "Konektatu gabe", "access_point": "Sarbide-puntua:", "battery_d": "Bateria %d%%", "password_for": "Pasahitza: %s", "group_edit": "editatu", "toast_muted": "Isilduta", "toast_sound": "Soinua aktibo", "toast_saved": "%d. memorian gordeta", "toast_full": "Memoriak beteta", "toast_none": "Ez dago memoriarik", "toast_preset": "Memoria %d %s", "toast_joining": "Konektatzen: %s", "toast_no_seek": "Bilaketarik ez SSBn", "toast_cancelled": "Eguneratzea bertan behera", "confirm_title": "Firmwarea instalatu?", "confirm_press": "Sakatu: instalatu", "confirm_long": "Luze sakatu: utzi", "installing": "Instalatzen", "battery_empty": "Bateria hutsik", "web_frequency": "Maiztasuna", "web_tune": "Sintonizatu", "web_signal": "Seinalea", "web_presets": "Memoriak", "web_add": "Gehitu unekoa", "web_name": "Izena", "web_rename": "Aldatu izena", "web_delete": "Ezabatu", "web_up": "Gora", "web_down": "Behera", "web_network": "Sarea", "web_password": "Pasahitza", "web_join": "Konektatu", "web_firmware": "Firmwarea", "web_upload": "Igo", "web_press": "Sakatu irratiaren botoia 30 s barru instalatzeko.", "web_installing": "Instalatzen. Irratia berrabiaraziko da.", "web_failed": "Huts egin du", "web_offline": "Konexiorik ez"},
+  "ga": {"band": "Banda", "mode": "Mód", "step": "Céim", "bandwidth": "Leithead banda", "volume": "Airde", "seek": "Cuardach", "val_mute": "balbh", "home_step": "céim", "home_mute": "Ciúin", "seek_up": "Cuardaigh suas", "seek_down": "Cuardaigh síos", "only_fm": "ar FM amháin", "lower_ssb": "SSB íochtarach", "upper_ssb": "SSB uachtarach", "status": "Stádas", "not_joined": "gan nasc", "wifi": "WiFi", "agc": "AGC", "on": "ann", "off": "as", "contrast": "Codarsnacht", "light": "Solas", "side_button": "Cnaipe taoibh", "about": "Maidir leis", "language": "Teanga", "side_mute": "Balbhaigh", "side_next": "Réamhshocrú eile", "side_back": "Siar", "val_preset": "réamhshocrú", "val_back": "siar", "joined_s": "Nasctha le %s", "not_joined_cap": "Gan nasc", "access_point": "Pointe rochtana:", "battery_d": "Ceallra %d%%", "password_for": "Pasfhocal %s", "group_edit": "eagar", "toast_muted": "Balbhaithe", "toast_sound": "Fuaim ann", "toast_saved": "Sábháilte mar réamhshocrú %d", "toast_full": "Réamhshocruithe lán", "toast_none": "Gan réamhshocruithe", "toast_preset": "Réamhshocrú %d %s", "toast_joining": "Ag nascadh le %s", "toast_no_seek": "Gan chuardach in SSB", "toast_cancelled": "Nuashonrú curtha ar ceal", "confirm_title": "Suiteáil dochtearraí?", "confirm_press": "Brúigh: suiteáil", "confirm_long": "Brú fada: cealaigh", "installing": "Á shuiteáil", "battery_empty": "Ceallra folamh", "web_frequency": "Minicíocht", "web_tune": "Tiúin", "web_signal": "Comhartha", "web_presets": "Réamhshocruithe", "web_add": "Cuir an ceann reatha leis", "web_name": "Ainm", "web_rename": "Athainmnigh", "web_delete": "Scrios", "web_up": "Suas", "web_down": "Síos", "web_network": "Líonra", "web_password": "Pasfhocal", "web_join": "Nasc", "web_firmware": "Dochtearraí", "web_upload": "Uaslódáil", "web_press": "Brúigh cnaipe an raidió laistigh de 30 s chun suiteáil.", "web_installing": "Á shuiteáil. Atosóidh an raidió.", "web_failed": "Theip air", "web_offline": "Gan nasc"},
+  "sq": {"band": "Brezi", "mode": "Modaliteti", "step": "Hapi", "bandwidth": "Gjerësia e brezit", "volume": "Volumi", "seek": "Kërkimi", "val_mute": "pa zë", "home_step": "hapi", "home_mute": "Pa zë", "seek_up": "Kërko lart", "seek_down": "Kërko poshtë", "only_fm": "vetëm në FM", "lower_ssb": "SSB e poshtme", "upper_ssb": "SSB e sipërme", "status": "Statusi", "not_joined": "pa lidhje", "wifi": "WiFi", "agc": "AGC", "on": "ndezur", "off": "fikur", "contrast": "Kontrasti", "light": "Drita", "side_button": "Butoni anësor", "about": "Rreth", "language": "Gjuha", "side_mute": "Heshtje", "side_next": "Memoria tjetër", "side_back": "Prapa", "val_preset": "memorie", "val_back": "prapa", "joined_s": "Lidhur me %s", "not_joined_cap": "Pa lidhje", "access_point": "Pika e qasjes:", "battery_d": "Bateria %d%%", "password_for": "Fjalëkalimi %s", "group_edit": "ndrysho", "toast_muted": "Pa zë", "toast_sound": "Zëri aktiv", "toast_saved": "Ruajtur në memorien %d", "toast_full": "Memoriet plot", "toast_none": "Asnjë memorie", "toast_preset": "Memoria %d %s", "toast_joining": "Po lidhet me %s", "toast_no_seek": "Pa kërkim në SSB", "toast_cancelled": "Përditësimi u anulua", "confirm_title": "Të instalohet firmware?", "confirm_press": "Shtyp: instalo", "confirm_long": "Shtypje e gjatë: anulo", "installing": "Po instalohet", "battery_empty": "Bateria bosh", "web_frequency": "Frekuenca", "web_tune": "Akordo", "web_signal": "Sinjali", "web_presets": "Memoriet", "web_add": "Shto aktualen", "web_name": "Emri", "web_rename": "Riemërto", "web_delete": "Fshi", "web_up": "Lart", "web_down": "Poshtë", "web_network": "Rrjeti", "web_password": "Fjalëkalimi", "web_join": "Lidhu", "web_firmware": "Firmware", "web_upload": "Ngarko", "web_press": "Shtyp çelësin e radios brenda 30 s për ta instaluar.", "web_installing": "Po instalohet. Radioja rinis.", "web_failed": "Dështoi", "web_offline": "Pa lidhje"},
+  "id": {"band": "Pita", "mode": "Mode", "step": "Langkah", "bandwidth": "Lebar pita", "volume": "Volume", "seek": "Cari", "val_mute": "bisu", "home_step": "langkah", "home_mute": "Bisu", "seek_up": "Cari naik", "seek_down": "Cari turun", "only_fm": "hanya di FM", "lower_ssb": "SSB bawah", "upper_ssb": "SSB atas", "status": "Status", "not_joined": "tidak terhubung", "wifi": "WiFi", "agc": "AGC", "on": "nyala", "off": "mati", "contrast": "Kontras", "light": "Lampu", "side_button": "Tombol samping", "about": "Tentang", "language": "Bahasa", "side_mute": "Bisu", "side_next": "Preset berikutnya", "side_back": "Kembali", "val_preset": "preset", "val_back": "kembali", "joined_s": "Terhubung ke %s", "not_joined_cap": "Tidak terhubung", "access_point": "Titik akses:", "battery_d": "Baterai %d%%", "password_for": "Sandi %s", "group_edit": "edit", "toast_muted": "Dibisukan", "toast_sound": "Suara nyala", "toast_saved": "Disimpan ke preset %d", "toast_full": "Preset penuh", "toast_none": "Tidak ada preset", "toast_preset": "Preset %d %s", "toast_joining": "Menghubungkan %s", "toast_no_seek": "Tak bisa cari di SSB", "toast_cancelled": "Pembaruan dibatalkan", "confirm_title": "Pasang firmware?", "confirm_press": "Tekan: pasang", "confirm_long": "Tekan lama: batal", "installing": "Memasang", "battery_empty": "Baterai habis", "web_frequency": "Frekuensi", "web_tune": "Setel", "web_signal": "Sinyal", "web_presets": "Preset", "web_add": "Tambah saat ini", "web_name": "Nama", "web_rename": "Ganti nama", "web_delete": "Hapus", "web_up": "Naik", "web_down": "Turun", "web_network": "Jaringan", "web_password": "Kata sandi", "web_join": "Hubungkan", "web_firmware": "Firmware", "web_upload": "Unggah", "web_press": "Tekan kenop radio dalam 30 detik untuk memasang.", "web_installing": "Memasang. Radio dimulai ulang.", "web_failed": "Gagal", "web_offline": "Tidak ada koneksi"},
+  "ms": {"band": "Jalur", "mode": "Mod", "step": "Langkah", "bandwidth": "Lebar jalur", "volume": "Kelantangan", "seek": "Cari", "val_mute": "senyap", "home_step": "langkah", "home_mute": "Bisu", "seek_up": "Cari naik", "seek_down": "Cari turun", "only_fm": "hanya FM", "lower_ssb": "SSB bawah", "upper_ssb": "SSB atas", "status": "Status", "not_joined": "tidak disambung", "wifi": "WiFi", "agc": "AGC", "on": "hidup", "off": "mati", "contrast": "Kontras", "light": "Lampu", "side_button": "Butang sisi", "about": "Perihal", "language": "Bahasa", "side_mute": "Senyap", "side_next": "Pratetap seterusnya", "side_back": "Kembali", "val_preset": "pratetap", "val_back": "kembali", "joined_s": "Disambung ke %s", "not_joined_cap": "Tidak disambung", "access_point": "Titik akses:", "battery_d": "Bateri %d%%", "password_for": "Kata laluan %s", "group_edit": "ubah", "toast_muted": "Disenyapkan", "toast_sound": "Bunyi hidup", "toast_saved": "Disimpan ke pratetap %d", "toast_full": "Pratetap penuh", "toast_none": "Tiada pratetap", "toast_preset": "Pratetap %d %s", "toast_joining": "Menyambung ke %s", "toast_no_seek": "Tiada carian dalam SSB", "toast_cancelled": "Kemas kini dibatalkan", "confirm_title": "Pasang perisian tegar?", "confirm_press": "Tekan: pasang", "confirm_long": "Tekan lama: batal", "installing": "Memasang", "battery_empty": "Bateri habis", "web_frequency": "Frekuensi", "web_tune": "Tala", "web_signal": "Isyarat", "web_presets": "Pratetap", "web_add": "Tambah semasa", "web_name": "Nama", "web_rename": "Namakan semula", "web_delete": "Padam", "web_up": "Naik", "web_down": "Turun", "web_network": "Rangkaian", "web_password": "Kata laluan", "web_join": "Sambung", "web_firmware": "Perisian tegar", "web_upload": "Muat naik", "web_press": "Tekan tombol pada radio dalam 30 s untuk memasang.", "web_installing": "Memasang. Radio dimulakan semula.", "web_failed": "Gagal", "web_offline": "Tiada sambungan"},
+  "sw": {"band": "Bendi", "mode": "Aina", "step": "Hatua", "bandwidth": "Upana wa bendi", "volume": "Sauti", "seek": "Tafuta", "val_mute": "kimya", "home_step": "hatua", "home_mute": "Kimya", "seek_up": "Tafuta juu", "seek_down": "Tafuta chini", "only_fm": "FM pekee", "lower_ssb": "SSB ya chini", "upper_ssb": "SSB ya juu", "status": "Hali", "not_joined": "haijaunganishwa", "wifi": "WiFi", "agc": "AGC", "on": "imewashwa", "off": "imezimwa", "contrast": "Utofautishaji", "light": "Mwanga", "side_button": "Kitufe cha pembeni", "about": "Kuhusu", "language": "Lugha", "side_mute": "Nyamazisha", "side_next": "Kituo kijacho", "side_back": "Rudi", "val_preset": "kituo", "val_back": "rudi", "joined_s": "Imeunganishwa: %s", "not_joined_cap": "Haijaunganishwa", "access_point": "Kituo cha ufikiaji:", "battery_d": "Betri %d%%", "password_for": "Nenosiri la %s", "group_edit": "hariri", "toast_muted": "Kimya", "toast_sound": "Sauti imewashwa", "toast_saved": "Imehifadhiwa kituo %d", "toast_full": "Vituo vimejaa", "toast_none": "Hakuna vituo", "toast_preset": "Kituo %d %s", "toast_joining": "Inaunganisha %s", "toast_no_seek": "Hakuna utafutaji SSB", "toast_cancelled": "Sasisho limeghairiwa", "confirm_title": "Sakinisha firmware?", "confirm_press": "Bonyeza: sakinisha", "confirm_long": "Bonyeza kwa muda: ghairi", "installing": "Inasakinisha", "battery_empty": "Betri imeisha", "web_frequency": "Masafa", "web_tune": "Rekebisha", "web_signal": "Mawimbi", "web_presets": "Vituo", "web_add": "Ongeza cha sasa", "web_name": "Jina", "web_rename": "Badilisha jina", "web_delete": "Futa", "web_up": "Juu", "web_down": "Chini", "web_network": "Mtandao", "web_password": "Nenosiri", "web_join": "Unganisha", "web_firmware": "Firmware", "web_upload": "Pakia", "web_press": "Bonyeza kitufe cha redio ndani ya sekunde 30 ili kusakinisha.", "web_installing": "Inasakinisha. Redio inaanza upya.", "web_failed": "Imeshindwa", "web_offline": "Hakuna muunganisho"},
+  "tl": {"band": "Band", "mode": "Mode", "step": "Hakbang", "bandwidth": "Bandwidth", "volume": "Lakas", "seek": "Hanap", "val_mute": "mute", "home_step": "hakbang", "home_mute": "Mute", "seek_up": "Hanap pataas", "seek_down": "Hanap pababa", "only_fm": "sa FM lang", "lower_ssb": "ibabang SSB", "upper_ssb": "itaas na SSB", "status": "Status", "not_joined": "di konektado", "wifi": "WiFi", "agc": "AGC", "on": "bukas", "off": "sarado", "contrast": "Contrast", "light": "Ilaw", "side_button": "Gilid na button", "about": "Tungkol", "language": "Wika", "side_mute": "I-mute", "side_next": "Susunod na preset", "side_back": "Bumalik", "val_preset": "preset", "val_back": "bumalik", "joined_s": "Konektado sa %s", "not_joined_cap": "Di konektado", "access_point": "Access point:", "battery_d": "Baterya %d%%", "password_for": "Password ng %s", "group_edit": "i-edit", "toast_muted": "Naka-mute", "toast_sound": "May tunog", "toast_saved": "Na-save sa preset %d", "toast_full": "Puno na ang preset", "toast_none": "Walang preset", "toast_preset": "Preset %d %s", "toast_joining": "Kumokonekta sa %s", "toast_no_seek": "Walang hanap sa SSB", "toast_cancelled": "Kinansela ang update", "confirm_title": "I-install ang firmware?", "confirm_press": "Pindot: i-install", "confirm_long": "Matagal na pindot: kansela", "installing": "Ini-install", "battery_empty": "Ubos na ang baterya", "web_frequency": "Frequency", "web_tune": "I-tune", "web_signal": "Signal", "web_presets": "Mga preset", "web_add": "Idagdag ang kasalukuyan", "web_name": "Pangalan", "web_rename": "Palitan ang pangalan", "web_delete": "Burahin", "web_up": "Pataas", "web_down": "Pababa", "web_network": "Network", "web_password": "Password", "web_join": "Kumonekta", "web_firmware": "Firmware", "web_upload": "I-upload", "web_press": "Pindutin ang knob ng radyo sa loob ng 30 s para mag-install.", "web_installing": "Ini-install. Magre-restart ang radyo.", "web_failed": "Nabigo", "web_offline": "Walang koneksyon"},
+  "wa": {"band": "Bande", "mode": "Môde", "step": "Pas", "bandwidth": "Lårdjeur di bande", "volume": "Volume", "seek": "Cweraedje", "val_mute": "sins son", "home_step": "pas", "home_mute": "Mute", "seek_up": "Cweri pa dzeu", "seek_down": "Cweri pa dzo", "only_fm": "seulmint so FM", "lower_ssb": "SSB d' dizo", "upper_ssb": "SSB d' dizeu", "status": "Estat", "not_joined": "nén raloyî", "wifi": "WiFi", "agc": "AGC", "on": "oyi", "off": "nén", "contrast": "Contraste", "light": "Loumire", "side_button": "Boton d' costé", "about": "Åd fwait", "language": "Lingaedje", "side_mute": "Sins son", "side_next": "Memwere shuvante", "side_back": "En erî", "val_preset": "memwere", "val_back": "en erî", "joined_s": "Raloyî a %s", "not_joined_cap": "Nén raloyî", "access_point": "Pont d' accès:", "battery_d": "Batreye %d%%", "password_for": "Sicret po %s", "group_edit": "candjî", "toast_muted": "Sins son", "toast_sound": "Avou son", "toast_saved": "Wårdé el memwere %d", "toast_full": "Memwers plinnes", "toast_none": "Nole memwere", "toast_preset": "Memwere %d %s", "toast_joining": "Raloyaedje a %s", "toast_no_seek": "Nén d' cweraedje e SSB", "toast_cancelled": "Metaedje a djoû rinoncî", "confirm_title": "Astaler l' firmware?", "confirm_press": "Tchôkî: astaler", "confirm_long": "Tchôkî lontins: rinoncî", "installing": "Astalaedje", "battery_empty": "Batreye vude", "web_frequency": "Frecwince", "web_tune": "Accorder", "web_signal": "Sinal", "web_presets": "Memwers", "web_add": "Radjouter l' cisse ci", "web_name": "No", "web_rename": "Rilomer", "web_delete": "Disfacer", "web_up": "Å dzeu", "web_down": "Å dzo", "web_network": "Rantoele", "web_password": "Sicret", "web_join": "Raloyî", "web_firmware": "Firmware", "web_upload": "Evoyî", "web_press": "Tchôkîz sol boton del radio dins les 30 s po astaler.", "web_installing": "Astalaedje. Li radio rataeke.", "web_failed": "Raté", "web_offline": "Nén d' raloyaedje"},
+  "is": {"band": "Svið", "mode": "Hamur", "step": "Skref", "bandwidth": "Bandbreidd", "volume": "Hljóðstyrkur", "seek": "Leit", "val_mute": "þaggað", "home_step": "skref", "home_mute": "Þögn", "seek_up": "Leita upp", "seek_down": "Leita niður", "only_fm": "aðeins á FM", "lower_ssb": "neðra SSB", "upper_ssb": "efra SSB", "status": "Staða", "not_joined": "ekki tengt", "wifi": "WiFi", "agc": "AGC", "on": "kveikt", "off": "slökkt", "contrast": "Birtuskil", "light": "Ljós", "side_button": "Hliðarhnappur", "about": "Um", "language": "Tungumál", "side_mute": "Þagga", "side_next": "Næsta forval", "side_back": "Til baka", "val_preset": "forval", "val_back": "til baka", "joined_s": "Tengt við %s", "not_joined_cap": "Ekki tengt", "access_point": "Aðgangsstaður:", "battery_d": "Rafhlaða %d%%", "password_for": "Lykilorð %s", "group_edit": "breyta", "toast_muted": "Þaggað", "toast_sound": "Hljóð á", "toast_saved": "Vistað í forval %d", "toast_full": "Forvöl full", "toast_none": "Engin forvöl", "toast_preset": "Forval %d %s", "toast_joining": "Tengist %s", "toast_no_seek": "Engin leit í SSB", "toast_cancelled": "Uppfærslu hætt", "confirm_title": "Setja upp fastbúnað?", "confirm_press": "Ýta: setja upp", "confirm_long": "Halda inni: hætta við", "installing": "Set upp", "battery_empty": "Rafhlaða tóm", "web_frequency": "Tíðni", "web_tune": "Stilla", "web_signal": "Merki", "web_presets": "Forvöl", "web_add": "Bæta við núverandi", "web_name": "Heiti", "web_rename": "Endurnefna", "web_delete": "Eyða", "web_up": "Upp", "web_down": "Niður", "web_network": "Net", "web_password": "Lykilorð", "web_join": "Tengjast", "web_firmware": "Fastbúnaður", "web_upload": "Hlaða upp", "web_press": "Ýttu á hnappinn á útvarpinu innan 30 s til að setja upp.", "web_installing": "Set upp. Útvarpið endurræsist.", "web_failed": "Mistókst", "web_offline": "Engin tenging"},
+  "fo": {"band": "Band", "mode": "Háttur", "step": "Stig", "bandwidth": "Bandbreidd", "volume": "Ljóðstyrki", "seek": "Leita", "val_mute": "kvirt", "home_step": "stig", "home_mute": "Kvirt", "seek_up": "Leita upp", "seek_down": "Leita niður", "only_fm": "bert á FM", "lower_ssb": "niðara SSB", "upper_ssb": "ovara SSB", "status": "Støða", "not_joined": "ikki sambundið", "wifi": "WiFi", "agc": "AGC", "on": "tendrað", "off": "sløkt", "contrast": "Kontrast", "light": "Ljós", "side_button": "Síðuknøttur", "about": "Um", "language": "Mál", "side_mute": "Kvirt", "side_next": "Næsta forval", "side_back": "Aftur", "val_preset": "forval", "val_back": "aftur", "joined_s": "Sambundið við %s", "not_joined_cap": "Ikki sambundið", "access_point": "Atgongdarstað:", "battery_d": "Battarí %d%%", "password_for": "Loyniorð %s", "group_edit": "broyt", "toast_muted": "Kvirt", "toast_sound": "Ljóð á", "toast_saved": "Goymt sum forval %d", "toast_full": "Forvøl full", "toast_none": "Eingi forvøl", "toast_preset": "Forval %d %s", "toast_joining": "Sambindur við %s", "toast_no_seek": "Eingin leiting í SSB", "toast_cancelled": "Dagføring steðgað", "confirm_title": "Leggja inn fastforrit?", "confirm_press": "Trýst: legg inn", "confirm_long": "Langt trýst: angra", "installing": "Leggur inn", "battery_empty": "Battaríið er tómt", "web_frequency": "Tíðni", "web_tune": "Stilla", "web_signal": "Signal", "web_presets": "Forvøl", "web_add": "Legg núverandi afturat", "web_name": "Navn", "web_rename": "Nýtt navn", "web_delete": "Strika", "web_up": "Upp", "web_down": "Niður", "web_network": "Net", "web_password": "Loyniorð", "web_join": "Sambind", "web_firmware": "Fastforrit", "web_upload": "Legg upp", "web_press": "Trýst á knøttin á útvarpinum innan 30 s fyri at leggja inn.", "web_installing": "Leggur inn. Útvarpið byrjar umaftur.", "web_failed": "Miseydnaðist", "web_offline": "Einki samband"},
+  "et": {"band": "Sagedusala", "mode": "Režiim", "step": "Samm", "bandwidth": "Ribalaius", "volume": "Helitugevus", "seek": "Otsing", "val_mute": "hääletu", "home_step": "samm", "home_mute": "Vait", "seek_up": "Otsi üles", "seek_down": "Otsi alla", "only_fm": "ainult FM-il", "lower_ssb": "alumine SSB", "upper_ssb": "ülemine SSB", "status": "Olek", "not_joined": "ühendamata", "wifi": "WiFi", "agc": "AGC", "on": "sees", "off": "väljas", "contrast": "Kontrast", "light": "Tuli", "side_button": "Külgnupp", "about": "Teave", "language": "Keel", "side_mute": "Vaigista", "side_next": "Järgmine eelvalik", "side_back": "Tagasi", "val_preset": "eelvalik", "val_back": "tagasi", "joined_s": "Ühendatud: %s", "not_joined_cap": "Ühendamata", "access_point": "Pääsupunkt:", "battery_d": "Aku %d%%", "password_for": "Parool: %s", "group_edit": "muuda", "toast_muted": "Vaigistatud", "toast_sound": "Heli sees", "toast_saved": "Salvestatud eelvalikusse %d", "toast_full": "Eelvalikud täis", "toast_none": "Eelvalikuid pole", "toast_preset": "Eelvalik %d %s", "toast_joining": "Ühendamine: %s", "toast_no_seek": "SSB-s otsingut pole", "toast_cancelled": "Uuendus tühistatud", "confirm_title": "Paigaldada püsivara?", "confirm_press": "Vajuta: paigalda", "confirm_long": "Pikk vajutus: tühista", "installing": "Paigaldamine", "battery_empty": "Aku tühi", "web_frequency": "Sagedus", "web_tune": "Häälesta", "web_signal": "Signaal", "web_presets": "Eelvalikud", "web_add": "Lisa praegune", "web_name": "Nimi", "web_rename": "Nimeta ümber", "web_delete": "Kustuta", "web_up": "Üles", "web_down": "Alla", "web_network": "Võrk", "web_password": "Parool", "web_join": "Ühenda", "web_firmware": "Püsivara", "web_upload": "Laadi üles", "web_press": "Paigaldamiseks vajuta 30 s jooksul raadio nuppu.", "web_installing": "Paigaldamine. Raadio taaskäivitub.", "web_failed": "Ebaõnnestus", "web_offline": "Ühendus puudub"},
+  "sk": {"band": "Pásmo", "mode": "Režim", "step": "Krok", "bandwidth": "Šírka pásma", "volume": "Hlasitosť", "seek": "Hľadanie", "val_mute": "stlmiť", "home_step": "krok", "home_mute": "Ticho", "seek_up": "Hľadať nahor", "seek_down": "Hľadať nadol", "only_fm": "len na FM", "lower_ssb": "dolné SSB", "upper_ssb": "horné SSB", "status": "Stav", "not_joined": "nepripojené", "wifi": "WiFi", "agc": "AGC", "on": "zap", "off": "vyp", "contrast": "Kontrast", "light": "Svetlo", "side_button": "Bočné tlačidlo", "about": "O rádiu", "language": "Jazyk", "side_mute": "Stlmiť", "side_next": "Ďalšia predvoľba", "side_back": "Späť", "val_preset": "predvoľba", "val_back": "späť", "joined_s": "Pripojené k %s", "not_joined_cap": "Nepripojené", "access_point": "Prístupový bod:", "battery_d": "Batéria %d%%", "password_for": "Heslo pre %s", "group_edit": "upraviť", "toast_muted": "Stlmené", "toast_sound": "Zvuk zapnutý", "toast_saved": "Uložené na predvoľbu %d", "toast_full": "Predvoľby plné", "toast_none": "Žiadne predvoľby", "toast_preset": "Predvoľba %d %s", "toast_joining": "Pripájanie k %s", "toast_no_seek": "V SSB nemožno hľadať", "toast_cancelled": "Aktualizácia zrušená", "confirm_title": "Inštalovať firmvér?", "confirm_press": "Stlač: inštalovať", "confirm_long": "Podrž: zrušiť", "installing": "Inštalácia", "battery_empty": "Batéria vybitá", "web_frequency": "Frekvencia", "web_tune": "Naladiť", "web_signal": "Signál", "web_presets": "Predvoľby", "web_add": "Pridať aktuálnu", "web_name": "Názov", "web_rename": "Premenovať", "web_delete": "Odstrániť", "web_up": "Nahor", "web_down": "Nadol", "web_network": "Sieť", "web_password": "Heslo", "web_join": "Pripojiť", "web_firmware": "Firmvér", "web_upload": "Nahrať", "web_press": "Do 30 s stlačte gombík na rádiu na inštaláciu.", "web_installing": "Inštalácia. Rádio sa reštartuje.", "web_failed": "Zlyhalo", "web_offline": "Bez pripojenia"},
+  "hr": {"band": "Pojas", "mode": "Način", "step": "Korak", "bandwidth": "Širina pojasa", "volume": "Glasnoća", "seek": "Pretraga", "val_mute": "utišano", "home_step": "korak", "home_mute": "Tiho", "seek_up": "Traži gore", "seek_down": "Traži dolje", "only_fm": "samo na FM", "lower_ssb": "donji SSB", "upper_ssb": "gornji SSB", "status": "Status", "not_joined": "nije spojeno", "wifi": "WiFi", "agc": "AGC", "on": "uklj.", "off": "isklj.", "contrast": "Kontrast", "light": "Svjetlo", "side_button": "Bočna tipka", "about": "O uređaju", "language": "Jezik", "side_mute": "Utišaj", "side_next": "Sljedeća memorija", "side_back": "Natrag", "val_preset": "memorija", "val_back": "natrag", "joined_s": "Spojeno na %s", "not_joined_cap": "Nije spojeno", "access_point": "Pristupna točka:", "battery_d": "Baterija %d%%", "password_for": "Lozinka za %s", "group_edit": "uredi", "toast_muted": "Utišano", "toast_sound": "Zvuk uključen", "toast_saved": "Spremljeno u memoriju %d", "toast_full": "Memorije pune", "toast_none": "Nema memorija", "toast_preset": "Memorija %d %s", "toast_joining": "Spajanje na %s", "toast_no_seek": "Nema pretrage u SSB", "toast_cancelled": "Ažuriranje otkazano", "confirm_title": "Instalirati firmware?", "confirm_press": "Pritisak: instaliraj", "confirm_long": "Dugi pritisak: odustani", "installing": "Instaliranje", "battery_empty": "Baterija prazna", "web_frequency": "Frekvencija", "web_tune": "Ugodi", "web_signal": "Signal", "web_presets": "Memorije", "web_add": "Dodaj trenutnu", "web_name": "Naziv", "web_rename": "Preimenuj", "web_delete": "Izbriši", "web_up": "Gore", "web_down": "Dolje", "web_network": "Mreža", "web_password": "Lozinka", "web_join": "Spoji", "web_firmware": "Firmware", "web_upload": "Učitaj", "web_press": "Pritisnite gumb na radiju unutar 30 s za instalaciju.", "web_installing": "Instaliranje. Radio se ponovno pokreće.", "web_failed": "Neuspjelo", "web_offline": "Nema veze"},
+  "bs": {"band": "Opseg", "mode": "Način", "step": "Korak", "bandwidth": "Širina opsega", "volume": "Jačina", "seek": "Pretraga", "val_mute": "utišano", "home_step": "korak", "home_mute": "Tiho", "seek_up": "Traži gore", "seek_down": "Traži dolje", "only_fm": "samo na FM", "lower_ssb": "donji SSB", "upper_ssb": "gornji SSB", "status": "Status", "not_joined": "nije povezano", "wifi": "WiFi", "agc": "AGC", "on": "uklj.", "off": "isklj.", "contrast": "Kontrast", "light": "Svjetlo", "side_button": "Bočno dugme", "about": "O uređaju", "language": "Jezik", "side_mute": "Utišaj", "side_next": "Sljedeća memorija", "side_back": "Nazad", "val_preset": "memorija", "val_back": "nazad", "joined_s": "Povezano na %s", "not_joined_cap": "Nije povezano", "access_point": "Pristupna tačka:", "battery_d": "Baterija %d%%", "password_for": "Lozinka za %s", "group_edit": "uredi", "toast_muted": "Utišano", "toast_sound": "Zvuk uključen", "toast_saved": "Sačuvano u memoriju %d", "toast_full": "Memorije pune", "toast_none": "Nema memorija", "toast_preset": "Memorija %d %s", "toast_joining": "Povezivanje na %s", "toast_no_seek": "Nema pretrage u SSB", "toast_cancelled": "Ažuriranje otkazano", "confirm_title": "Instalirati firmware?", "confirm_press": "Pritisak: instaliraj", "confirm_long": "Dugi pritisak: otkaži", "installing": "Instaliranje", "battery_empty": "Baterija prazna", "web_frequency": "Frekvencija", "web_tune": "Podesi", "web_signal": "Signal", "web_presets": "Memorije", "web_add": "Dodaj trenutnu", "web_name": "Naziv", "web_rename": "Preimenuj", "web_delete": "Obriši", "web_up": "Gore", "web_down": "Dolje", "web_network": "Mreža", "web_password": "Lozinka", "web_join": "Poveži", "web_firmware": "Firmware", "web_upload": "Otpremi", "web_press": "Pritisnite dugme na radiju u roku od 30 s za instalaciju.", "web_installing": "Instaliranje. Radio se ponovo pokreće.", "web_failed": "Neuspješno", "web_offline": "Nema veze"},
+  "sl": {"band": "Pas", "mode": "Način", "step": "Korak", "bandwidth": "Pasovna širina", "volume": "Glasnost", "seek": "Iskanje", "val_mute": "utišano", "home_step": "korak", "home_mute": "Tiho", "seek_up": "Išči gor", "seek_down": "Išči dol", "only_fm": "samo na FM", "lower_ssb": "spodnji SSB", "upper_ssb": "zgornji SSB", "status": "Stanje", "not_joined": "ni povezano", "wifi": "WiFi", "agc": "AGC", "on": "vklj.", "off": "izklj.", "contrast": "Kontrast", "light": "Lučka", "side_button": "Stranski gumb", "about": "O napravi", "language": "Jezik", "side_mute": "Utišaj", "side_next": "Naslednja postaja", "side_back": "Nazaj", "val_preset": "postaja", "val_back": "nazaj", "joined_s": "Povezano z %s", "not_joined_cap": "Ni povezano", "access_point": "Dostopna točka:", "battery_d": "Baterija %d%%", "password_for": "Geslo za %s", "group_edit": "uredi", "toast_muted": "Utišano", "toast_sound": "Zvok vklopljen", "toast_saved": "Shranjeno kot postaja %d", "toast_full": "Pomnilnik poln", "toast_none": "Ni shranjenih postaj", "toast_preset": "Postaja %d %s", "toast_joining": "Povezovanje z %s", "toast_no_seek": "V SSB ni iskanja", "toast_cancelled": "Posodobitev preklicana", "confirm_title": "Namestim firmware?", "confirm_press": "Pritisk: namesti", "confirm_long": "Dolg pritisk: prekliči", "installing": "Nameščanje", "battery_empty": "Baterija prazna", "web_frequency": "Frekvenca", "web_tune": "Nastavi", "web_signal": "Signal", "web_presets": "Postaje", "web_add": "Dodaj trenutno", "web_name": "Ime", "web_rename": "Preimenuj", "web_delete": "Izbriši", "web_up": "Gor", "web_down": "Dol", "web_network": "Omrežje", "web_password": "Geslo", "web_join": "Poveži", "web_firmware": "Vdelana programska oprema", "web_upload": "Naloži", "web_press": "Za namestitev v 30 s pritisnite gumb na radiu.", "web_installing": "Nameščanje. Radio se znova zažene.", "web_failed": "Ni uspelo", "web_offline": "Ni povezave"},
+  "sr": {"band": "Opseg", "mode": "Režim", "step": "Korak", "bandwidth": "Širina opsega", "volume": "Jačina zvuka", "seek": "Pretraga", "val_mute": "utišano", "home_step": "korak", "home_mute": "Tiho", "seek_up": "Traži gore", "seek_down": "Traži dole", "only_fm": "samo na FM", "lower_ssb": "donji SSB", "upper_ssb": "gornji SSB", "status": "Status", "not_joined": "nije povezano", "wifi": "WiFi", "agc": "AGC", "on": "uklj.", "off": "isklj.", "contrast": "Kontrast", "light": "Svetlo", "side_button": "Bočno dugme", "about": "O uređaju", "language": "Jezik", "side_mute": "Utišaj", "side_next": "Sledeća memorija", "side_back": "Nazad", "val_preset": "memorija", "val_back": "nazad", "joined_s": "Povezano na %s", "not_joined_cap": "Nije povezano", "access_point": "Pristupna tačka:", "battery_d": "Baterija %d%%", "password_for": "Lozinka za %s", "group_edit": "uredi", "toast_muted": "Utišano", "toast_sound": "Zvuk uključen", "toast_saved": "Sačuvano u memoriju %d", "toast_full": "Memorije pune", "toast_none": "Nema memorija", "toast_preset": "Memorija %d %s", "toast_joining": "Povezivanje na %s", "toast_no_seek": "Nema pretrage u SSB", "toast_cancelled": "Ažuriranje otkazano", "confirm_title": "Instalirati firmver?", "confirm_press": "Pritisak: instaliraj", "confirm_long": "Dugi pritisak: otkaži", "installing": "Instaliranje", "battery_empty": "Baterija prazna", "web_frequency": "Frekvencija", "web_tune": "Podesi", "web_signal": "Signal", "web_presets": "Memorije", "web_add": "Dodaj trenutnu", "web_name": "Naziv", "web_rename": "Preimenuj", "web_delete": "Obriši", "web_up": "Gore", "web_down": "Dole", "web_network": "Mreža", "web_password": "Lozinka", "web_join": "Poveži", "web_firmware": "Firmver", "web_upload": "Otpremi", "web_press": "Pritisnite dugme na radiju u roku od 30 s za instalaciju.", "web_installing": "Instaliranje. Radio se ponovo pokreće.", "web_failed": "Neuspešno", "web_offline": "Nema veze"},
+  "hu": {"band": "Sáv", "mode": "Mód", "step": "Lépés", "bandwidth": "Sávszélesség", "volume": "Hangerő", "seek": "Keresés", "val_mute": "néma", "home_step": "lépés", "home_mute": "Néma", "seek_up": "Keresés fel", "seek_down": "Keresés le", "only_fm": "csak FM-en", "lower_ssb": "alsó SSB", "upper_ssb": "felső SSB", "status": "Állapot", "not_joined": "nincs kapcsolat", "wifi": "WiFi", "agc": "AGC", "on": "be", "off": "ki", "contrast": "Kontraszt", "light": "Fény", "side_button": "Oldalgomb", "about": "Névjegy", "language": "Nyelv", "side_mute": "Némítás", "side_next": "Következő memória", "side_back": "Vissza", "val_preset": "memória", "val_back": "vissza", "joined_s": "Csatlakozva: %s", "not_joined_cap": "Nincs kapcsolat", "access_point": "Hozzáférési pont:", "battery_d": "Akku %d%%", "password_for": "Jelszó: %s", "group_edit": "szerk.", "toast_muted": "Némítva", "toast_sound": "Hang be", "toast_saved": "Mentve: %d. memória", "toast_full": "Memória megtelt", "toast_none": "Nincs memória", "toast_preset": "Memória %d %s", "toast_joining": "Csatlakozás: %s", "toast_no_seek": "SSB-ben nincs keresés", "toast_cancelled": "Frissítés megszakítva", "confirm_title": "Firmware telepítése?", "confirm_press": "Nyomás: telepítés", "confirm_long": "Hosszú nyomás: mégse", "installing": "Telepítés", "battery_empty": "Akku lemerült", "web_frequency": "Frekvencia", "web_tune": "Hangolás", "web_signal": "Jel", "web_presets": "Memóriák", "web_add": "Jelenlegi hozzáadása", "web_name": "Név", "web_rename": "Átnevezés", "web_delete": "Törlés", "web_up": "Fel", "web_down": "Le", "web_network": "Hálózat", "web_password": "Jelszó", "web_join": "Csatlakozás", "web_firmware": "Firmware", "web_upload": "Feltöltés", "web_press": "A telepítéshez nyomja meg a rádió gombját 30 s-on belül.", "web_installing": "Telepítés. A rádió újraindul.", "web_failed": "Sikertelen", "web_offline": "Nincs kapcsolat"},
+  "ro": {"band": "Bandă", "mode": "Mod", "step": "Pas", "bandwidth": "Lățime de bandă", "volume": "Volum", "seek": "Căutare", "val_mute": "mut", "home_step": "pas", "home_mute": "Mut", "seek_up": "Căutare sus", "seek_down": "Căutare jos", "only_fm": "doar pe FM", "lower_ssb": "SSB inferior", "upper_ssb": "SSB superior", "status": "Stare", "not_joined": "neconectat", "wifi": "WiFi", "agc": "AGC", "on": "pornit", "off": "oprit", "contrast": "Contrast", "light": "Lumină", "side_button": "Buton lateral", "about": "Despre", "language": "Limbă", "side_mute": "Fără sunet", "side_next": "Memoria următoare", "side_back": "Înapoi", "val_preset": "memorie", "val_back": "înapoi", "joined_s": "Conectat la %s", "not_joined_cap": "Neconectat", "access_point": "Punct de acces:", "battery_d": "Baterie %d%%", "password_for": "Parola %s", "group_edit": "editare", "toast_muted": "Sunet oprit", "toast_sound": "Sunet pornit", "toast_saved": "Salvat în memoria %d", "toast_full": "Memorii pline", "toast_none": "Nicio memorie", "toast_preset": "Memoria %d %s", "toast_joining": "Conectare la %s", "toast_no_seek": "Fără căutare în SSB", "toast_cancelled": "Actualizare anulată", "confirm_title": "Instalați firmware-ul?", "confirm_press": "Apăsare: instalare", "confirm_long": "Apăsare lungă: anulare", "installing": "Instalare", "battery_empty": "Baterie descărcată", "web_frequency": "Frecvență", "web_tune": "Acordare", "web_signal": "Semnal", "web_presets": "Memorii", "web_add": "Adaugă actuala", "web_name": "Nume", "web_rename": "Redenumire", "web_delete": "Ștergere", "web_up": "Sus", "web_down": "Jos", "web_network": "Rețea", "web_password": "Parolă", "web_join": "Conectare", "web_firmware": "Firmware", "web_upload": "Încărcare", "web_press": "Apăsați butonul radioului în 30 s pentru instalare.", "web_installing": "Instalare. Radioul repornește.", "web_failed": "Eșuat", "web_offline": "Fără conexiune"},
+  "tr": {"band": "Bant", "mode": "Mod", "step": "Adım", "bandwidth": "Bant genişliği", "volume": "Ses", "seek": "Arama", "val_mute": "sessiz", "home_step": "adım", "home_mute": "Sessiz", "seek_up": "Yukarı ara", "seek_down": "Aşağı ara", "only_fm": "sadece FM'de", "lower_ssb": "alt SSB", "upper_ssb": "üst SSB", "status": "Durum", "not_joined": "bağlı değil", "wifi": "WiFi", "agc": "AGC", "on": "açık", "off": "kapalı", "contrast": "Kontrast", "light": "Işık", "side_button": "Yan tuş", "about": "Hakkında", "language": "Dil", "side_mute": "Sessiz", "side_next": "Sonraki kayıt", "side_back": "Geri", "val_preset": "kayıt", "val_back": "geri", "joined_s": "Bağlandı: %s", "not_joined_cap": "Bağlı değil", "access_point": "Erişim noktası:", "battery_d": "Pil %d%%", "password_for": "Şifre: %s", "group_edit": "düzenle", "toast_muted": "Sessiz", "toast_sound": "Ses açık", "toast_saved": "%d. kayda kaydedildi", "toast_full": "Kayıtlar dolu", "toast_none": "Kayıt yok", "toast_preset": "Kayıt %d %s", "toast_joining": "Bağlanıyor: %s", "toast_no_seek": "SSB'de arama yok", "toast_cancelled": "Güncelleme iptal edildi", "confirm_title": "Firmware yüklensin mi?", "confirm_press": "Bas: yükle", "confirm_long": "Uzun bas: iptal", "installing": "Yükleniyor", "battery_empty": "Pil bitti", "web_frequency": "Frekans", "web_tune": "Ayarla", "web_signal": "Sinyal", "web_presets": "Kayıtlar", "web_add": "Mevcudu ekle", "web_name": "Ad", "web_rename": "Yeniden adlandır", "web_delete": "Sil", "web_up": "Yukarı", "web_down": "Aşağı", "web_network": "Ağ", "web_password": "Şifre", "web_join": "Bağlan", "web_firmware": "Firmware", "web_upload": "Yükle", "web_press": "Yüklemek için 30 sn içinde radyonun düğmesine basın.", "web_installing": "Yükleniyor. Radyo yeniden başlıyor.", "web_failed": "Başarısız", "web_offline": "Bağlantı yok"},
+  "az": {"band": "Diapazon", "mode": "Rejim", "step": "Addım", "bandwidth": "Zolaq eni", "volume": "Səs", "seek": "Axtarış", "val_mute": "səssiz", "home_step": "addım", "home_mute": "Səssiz", "seek_up": "Yuxarı axtar", "seek_down": "Aşağı axtar", "only_fm": "yalnız FM-də", "lower_ssb": "aşağı SSB", "upper_ssb": "yuxarı SSB", "status": "Status", "not_joined": "qoşulmayıb", "wifi": "WiFi", "agc": "AGC", "on": "açıq", "off": "bağlı", "contrast": "Kontrast", "light": "İşıq", "side_button": "Yan düymə", "about": "Haqqında", "language": "Dil", "side_mute": "Səssiz", "side_next": "Növbəti yaddaş", "side_back": "Geri", "val_preset": "yaddaş", "val_back": "geri", "joined_s": "Qoşuldu: %s", "not_joined_cap": "Qoşulmayıb", "access_point": "Giriş nöqtəsi:", "battery_d": "Batareya %d%%", "password_for": "Şifrə: %s", "group_edit": "redaktə", "toast_muted": "Səssiz", "toast_sound": "Səs açıq", "toast_saved": "Yaddaşa saxlandı: %d", "toast_full": "Yaddaş dolub", "toast_none": "Yaddaş boşdur", "toast_preset": "Yaddaş %d %s", "toast_joining": "Qoşulur: %s", "toast_no_seek": "SSB-də axtarış yoxdur", "toast_cancelled": "Yeniləmə ləğv edildi", "confirm_title": "Firmware quraşdırılsın?", "confirm_press": "Bas: quraşdır", "confirm_long": "Uzun bas: ləğv et", "installing": "Quraşdırılır", "battery_empty": "Batareya boşdur", "web_frequency": "Tezlik", "web_tune": "Tənzimlə", "web_signal": "Siqnal", "web_presets": "Yaddaşlar", "web_add": "Cari olanı əlavə et", "web_name": "Ad", "web_rename": "Adını dəyiş", "web_delete": "Sil", "web_up": "Yuxarı", "web_down": "Aşağı", "web_network": "Şəbəkə", "web_password": "Şifrə", "web_join": "Qoşul", "web_firmware": "Proqram təminatı", "web_upload": "Yüklə", "web_press": "Quraşdırmaq üçün 30 s ərzində radionun düyməsini basın.", "web_installing": "Quraşdırılır. Radio yenidən başlayır.", "web_failed": "Alınmadı", "web_offline": "Bağlantı yoxdur"},
+  "lv": {"band": "Josla", "mode": "Režīms", "step": "Solis", "bandwidth": "Joslas platums", "volume": "Skaļums", "seek": "Meklēšana", "val_mute": "kluss", "home_step": "solis", "home_mute": "Klusu", "seek_up": "Meklēt augšup", "seek_down": "Meklēt lejup", "only_fm": "tikai FM", "lower_ssb": "apakšējā SSB", "upper_ssb": "augšējā SSB", "status": "Statuss", "not_joined": "nav savienots", "wifi": "WiFi", "agc": "AGC", "on": "iesl.", "off": "izsl.", "contrast": "Kontrasts", "light": "Gaisma", "side_button": "Sānu poga", "about": "Par", "language": "Valoda", "side_mute": "Klusums", "side_next": "Nākamā atmiņa", "side_back": "Atpakaļ", "val_preset": "atmiņa", "val_back": "atpakaļ", "joined_s": "Savienots ar %s", "not_joined_cap": "Nav savienots", "access_point": "Piekļuves punkts:", "battery_d": "Baterija %d%%", "password_for": "Parole %s", "group_edit": "labot", "toast_muted": "Skaņa izslēgta", "toast_sound": "Skaņa ieslēgta", "toast_saved": "Saglabāts atmiņā %d", "toast_full": "Atmiņa pilna", "toast_none": "Nav atmiņu", "toast_preset": "Atmiņa %d %s", "toast_joining": "Savieno ar %s", "toast_no_seek": "SSB nav meklēšanas", "toast_cancelled": "Atjaunināšana atcelta", "confirm_title": "Instalēt firmware?", "confirm_press": "Nospied: instalēt", "confirm_long": "Turēt: atcelt", "installing": "Instalē", "battery_empty": "Baterija tukša", "web_frequency": "Frekvence", "web_tune": "Noskaņot", "web_signal": "Signāls", "web_presets": "Atmiņas", "web_add": "Pievienot pašreizējo", "web_name": "Nosaukums", "web_rename": "Pārdēvēt", "web_delete": "Dzēst", "web_up": "Augšup", "web_down": "Lejup", "web_network": "Tīkls", "web_password": "Parole", "web_join": "Pievienoties", "web_firmware": "Programmaparatūra", "web_upload": "Augšupielādēt", "web_press": "Lai instalētu, 30 s laikā nospiediet radio pogu.", "web_installing": "Instalē. Radio restartējas.", "web_failed": "Neizdevās", "web_offline": "Nav savienojuma"},
+  "lt": {"band": "Juosta", "mode": "Režimas", "step": "Žingsnis", "bandwidth": "Juostos plotis", "volume": "Garsumas", "seek": "Paieška", "val_mute": "nutildyta", "home_step": "žingsnis", "home_mute": "Tyla", "seek_up": "Ieškoti aukštyn", "seek_down": "Ieškoti žemyn", "only_fm": "tik FM", "lower_ssb": "apatinė SSB", "upper_ssb": "viršutinė SSB", "status": "Būsena", "not_joined": "neprisijungta", "wifi": "WiFi", "agc": "AGC", "on": "įj.", "off": "išj.", "contrast": "Kontrastas", "light": "Šviesa", "side_button": "Šoninis mygtukas", "about": "Apie", "language": "Kalba", "side_mute": "Nutildyti", "side_next": "Kita atmintis", "side_back": "Atgal", "val_preset": "atmintis", "val_back": "atgal", "joined_s": "Prisijungta: %s", "not_joined_cap": "Neprisijungta", "access_point": "Prieigos taškas:", "battery_d": "Baterija %d%%", "password_for": "Slaptažodis %s", "group_edit": "redag.", "toast_muted": "Nutildyta", "toast_sound": "Garsas įjungtas", "toast_saved": "Išsaugota atmintyje %d", "toast_full": "Atmintis pilna", "toast_none": "Nėra atminčių", "toast_preset": "Atmintis %d %s", "toast_joining": "Jungiamasi: %s", "toast_no_seek": "SSB paieška negalima", "toast_cancelled": "Atnaujinimas atšauktas", "confirm_title": "Įdiegti firmware?", "confirm_press": "Paspausti: įdiegti", "confirm_long": "Ilgai: atšaukti", "installing": "Diegiama", "battery_empty": "Baterija išsikrovė", "web_frequency": "Dažnis", "web_tune": "Derinti", "web_signal": "Signalas", "web_presets": "Atmintys", "web_add": "Pridėti dabartinę", "web_name": "Pavadinimas", "web_rename": "Pervadinti", "web_delete": "Ištrinti", "web_up": "Aukštyn", "web_down": "Žemyn", "web_network": "Tinklas", "web_password": "Slaptažodis", "web_join": "Prisijungti", "web_firmware": "Programinė įranga", "web_upload": "Įkelti", "web_press": "Norėdami įdiegti, per 30 s paspauskite radijo rankenėlę.", "web_installing": "Diegiama. Radijas paleidžiamas iš naujo.", "web_failed": "Nepavyko", "web_offline": "Nėra ryšio"},
+  "mt": {"band": "Banda", "mode": "Modalità", "step": "Pass", "bandwidth": "Wisa' tal-banda", "volume": "Volum", "seek": "Tfittxija", "val_mute": "mutu", "home_step": "pass", "home_mute": "Sieket", "seek_up": "Fittex 'il fuq", "seek_down": "Fittex 'l isfel", "only_fm": "FM biss", "lower_ssb": "SSB t'isfel", "upper_ssb": "SSB ta' fuq", "status": "Status", "not_joined": "mhux konness", "wifi": "WiFi", "agc": "AGC", "on": "mixgħul", "off": "mitfi", "contrast": "Kuntrast", "light": "Dawl", "side_button": "Buttuna tal-ġenb", "about": "Dwar", "language": "Lingwa", "side_mute": "Mutu", "side_next": "Memorja li jmiss", "side_back": "Lura", "val_preset": "memorja", "val_back": "lura", "joined_s": "Konness ma' %s", "not_joined_cap": "Mhux konness", "access_point": "Punt ta' aċċess:", "battery_d": "Batterija %d%%", "password_for": "Password ta' %s", "group_edit": "editja", "toast_muted": "Bla ħoss", "toast_sound": "Ħoss mixgħul", "toast_saved": "Salvat fil-memorja %d", "toast_full": "Memorji mimlija", "toast_none": "L-ebda memorja", "toast_preset": "Memorja %d %s", "toast_joining": "Jikkonnettja ma' %s", "toast_no_seek": "L-ebda tfittxija f'SSB", "toast_cancelled": "Aġġornament ikkanċellat", "confirm_title": "Ninstalla l-firmware?", "confirm_press": "Agħfas: installa", "confirm_long": "Agħfas fit-tul: ikkanċella", "installing": "Qed jinstalla", "battery_empty": "Batterija vojta", "web_frequency": "Frekwenza", "web_tune": "Issintonizza", "web_signal": "Sinjal", "web_presets": "Memorji", "web_add": "Żid il-kurrenti", "web_name": "Isem", "web_rename": "Semmi mill-ġdid", "web_delete": "Ħassar", "web_up": "Fuq", "web_down": "Isfel", "web_network": "Netwerk", "web_password": "Password", "web_join": "Ikkonnettja", "web_firmware": "Firmware", "web_upload": "Tella'", "web_press": "Agħfas il-buttuna tar-radju fi żmien 30 s biex tinstalla.", "web_installing": "Qed jinstalla. Ir-radju jerġa' jibda.", "web_failed": "Falla", "web_offline": "L-ebda konnessjoni"},
+  "cy": {"band": "Band", "mode": "Modd", "step": "Cam", "bandwidth": "Lled band", "volume": "Uchder", "seek": "Chwilio", "val_mute": "tewi", "home_step": "cam", "home_mute": "Tewi", "seek_up": "Chwilio i fyny", "seek_down": "Chwilio i lawr", "only_fm": "ar FM yn unig", "lower_ssb": "SSB isaf", "upper_ssb": "SSB uchaf", "status": "Statws", "not_joined": "heb gysylltu", "wifi": "WiFi", "agc": "AGC", "on": "ymlaen", "off": "i ffwrdd", "contrast": "Cyferbyniad", "light": "Golau", "side_button": "Botwm ochr", "about": "Ynghylch", "language": "Iaith", "side_mute": "Tewi", "side_next": "Rhagosodiad nesaf", "side_back": "Yn ôl", "val_preset": "rhagosodiad", "val_back": "yn ôl", "joined_s": "Wedi cysylltu â %s", "not_joined_cap": "Heb gysylltu", "access_point": "Pwynt mynediad:", "battery_d": "Batri %d%%", "password_for": "Cyfrinair %s", "group_edit": "golygu", "toast_muted": "Wedi tewi", "toast_sound": "Sain ymlaen", "toast_saved": "Cadwyd fel rhagosodiad %d", "toast_full": "Rhagosodiadau'n llawn", "toast_none": "Dim rhagosodiadau", "toast_preset": "Rhagosodiad %d %s", "toast_joining": "Yn cysylltu â %s", "toast_no_seek": "Dim chwilio yn SSB", "toast_cancelled": "Diweddariad wedi'i ganslo", "confirm_title": "Gosod cadarnwedd?", "confirm_press": "Pwyso: gosod", "confirm_long": "Pwyso hir: canslo", "installing": "Yn gosod", "battery_empty": "Batri'n wag", "web_frequency": "Amledd", "web_tune": "Tiwnio", "web_signal": "Signal", "web_presets": "Rhagosodiadau", "web_add": "Ychwanegu'r cyfredol", "web_name": "Enw", "web_rename": "Ailenwi", "web_delete": "Dileu", "web_up": "I fyny", "web_down": "I lawr", "web_network": "Rhwydwaith", "web_password": "Cyfrinair", "web_join": "Ymuno", "web_firmware": "Cadarnwedd", "web_upload": "Llwytho i fyny", "web_press": "Pwyswch fwlyn y radio o fewn 30 s i'w osod.", "web_installing": "Yn gosod. Mae'r radio'n ailgychwyn.", "web_failed": "Wedi methu", "web_offline": "Dim cysylltiad"},
+  "eo": {"band": "Bendo", "mode": "Reĝimo", "step": "Paŝo", "bandwidth": "Bendlarĝo", "volume": "Laŭteco", "seek": "Serĉo", "val_mute": "silenta", "home_step": "paŝo", "home_mute": "Muta", "seek_up": "Serĉi supren", "seek_down": "Serĉi suben", "only_fm": "nur ĉe FM", "lower_ssb": "malsupra SSB", "upper_ssb": "supra SSB", "status": "Stato", "not_joined": "ne konektita", "wifi": "WiFi", "agc": "AGC", "on": "ŝaltita", "off": "malŝaltita", "contrast": "Kontrasto", "light": "Lumo", "side_button": "Flankbutono", "about": "Pri", "language": "Lingvo", "side_mute": "Silentigi", "side_next": "Sekva antaŭagordo", "side_back": "Reen", "val_preset": "antaŭagordo", "val_back": "reen", "joined_s": "Konektita al %s", "not_joined_cap": "Ne konektita", "access_point": "Alirpunkto:", "battery_d": "Baterio %d%%", "password_for": "Pasvorto %s", "group_edit": "redakti", "toast_muted": "Silentigita", "toast_sound": "Sono ŝaltita", "toast_saved": "Savita kiel antaŭagordo %d", "toast_full": "Antaŭagordoj plenas", "toast_none": "Neniu antaŭagordo", "toast_preset": "Antaŭagordo %d %s", "toast_joining": "Konektiĝas al %s", "toast_no_seek": "Ne serĉeblas en SSB", "toast_cancelled": "Ĝisdatigo nuligita", "confirm_title": "Instali firmvaron?", "confirm_press": "Premo: instali", "confirm_long": "Longa premo: nuligi", "installing": "Instalado", "battery_empty": "Baterio malplena", "web_frequency": "Frekvenco", "web_tune": "Agordi", "web_signal": "Signalo", "web_presets": "Antaŭagordoj", "web_add": "Aldoni la nunan", "web_name": "Nomo", "web_rename": "Renomi", "web_delete": "Forigi", "web_up": "Supren", "web_down": "Suben", "web_network": "Reto", "web_password": "Pasvorto", "web_join": "Konekti", "web_firmware": "Firmvaro", "web_upload": "Alŝuti", "web_press": "Premu la radian butonon ene de 30 s por instali.", "web_installing": "Instalado. La radio restartas.", "web_failed": "Malsukcesis", "web_offline": "Neniu konekto"}
+};
+// ---- radio model ----
+const BANDS = [
+  { n: 'FM',   lo: 87500, hi: 108000, m: 'FM' },
+  { n: 'LW',   lo: 153,  hi: 279,   m: 'AM' },
+  { n: 'MW',   lo: 531,  hi: 1602,  m: 'AM' },
+  { n: '160m', lo: 1810, hi: 2000,  m: 'LSB' },
+  { n: '120m', lo: 2300, hi: 2495,  m: 'AM' },
+  { n: '90m',  lo: 3200, hi: 3400,  m: 'AM' },
+  { n: '80m',  lo: 3500, hi: 3800,  m: 'LSB' },
+  { n: '75m',  lo: 3900, hi: 4000,  m: 'AM' },
+  { n: '60m',  lo: 4750, hi: 5060,  m: 'AM' },
+  { n: '49m',  lo: 5900, hi: 6200,  m: 'AM' },
+  { n: '40m',  lo: 7000, hi: 7200,  m: 'LSB' },
+  { n: '41m',  lo: 7200, hi: 7450,  m: 'AM' },
+  { n: '31m',  lo: 9400, hi: 9900,  m: 'AM' },
+  { n: '25m',  lo: 11600, hi: 12100, m: 'AM' },
+  { n: '22m',  lo: 13570, hi: 13870, m: 'AM' },
+  { n: '20m',  lo: 14000, hi: 14350, m: 'USB' },
+  { n: '19m',  lo: 15100, hi: 15800, m: 'AM' },
+  { n: '16m',  lo: 17480, hi: 17900, m: 'AM' },
+  { n: '17m',  lo: 18068, hi: 18168, m: 'USB' },
+  { n: '15m',  lo: 21000, hi: 21450, m: 'USB' },
+  { n: '13m',  lo: 21450, hi: 21850, m: 'AM' },
+  { n: '12m',  lo: 24890, hi: 24990, m: 'USB' },
+  { n: '11m',  lo: 25670, hi: 26100, m: 'AM' },
+  { n: 'CB',   lo: 26965, hi: 27405, m: 'AM' },
+  { n: '10m',  lo: 28000, hi: 29700, m: 'USB' },
+];
+BANDS.forEach(b => b.last = b.m === 'FM' ? 100700 : Math.round((b.lo + b.hi) / 2 / (b.lo < 1700 ? 9 : 5)) * (b.lo < 1700 ? 9 : 5));
+BANDS[12].last = 9650; BANDS[9].last = 6070; BANDS[8].last = 4996;
+
+const STEPS = { FM: [[50, '50k'], [100, '100k'], [200, '200k']], AM: [[1, '1k'], [5, '5k'], [9, '9k'], [10, '10k']], SSB: [[0.01, '10Hz'], [0.1, '100Hz'], [1, '1k'], [5, '5k']] };
+const BWS = { AM: ['1.0k', '1.8k', '2.0k', '2.5k', '3.0k', '4.0k', '6.0k'], SSB: ['0.5k', '1.0k', '1.2k', '2.2k', '3.0k', '4.0k'], FM: ['Auto', '110k', '84k', '60k', '40k'] };
+const STATIONS = [
+  [4996, 4], [5920, 2], [5955, 3], [6005, 3], [6070, 5], [6160, 2], [7220, 3], [7280, 2], [7350, 4], [9420, 2], [9580, 3],
+  [9635, 4], [9670, 3], [9750, 2], [9996, 3], [11600, 2], [11780, 3], [13760, 2], [15400, 2], [702, 4], [1314, 3], [198, 3],
+  [88600, 5], [91000, 4], [93400, 5], [97500, 3], [100700, 5], [103900, 4], [106800, 3],
+];
+
+const S = {
+  view: 'splash', splashStart: 0, list: null, stack: [], adjust: null, info: null,
+  freq: 6070, mode: 'AM', stepIdx: { FM: 1, AM: 1, SSB: 2 }, bwIdx: { AM: 5, SSB: 4, FM: 0 },
+  lang: 'en', vol: 45, muted: false, agc: true, contrast: 15, light: 0, ssb: true, battery: 87, version: '0.1',
+  presets: [
+    { n: 'RWM', f: 4996, m: 'AM' }, { n: 'RWM', f: 9996, m: 'AM' }, { n: 'Ch 292', f: 6070, m: 'AM' },
+    { n: '40m', f: 7100, m: 'LSB' }, { n: 'FM', f: 100700, m: 'FM' },
+  ],
+  favIdx: -1, toast: null, volUntil: 0, seek: null, lastInput: performance.now(),
+  side: 'mute',
+  wifi: { joined: 'Lab', ip: '192.168.0.57', nets: [{ ssid: 'Lab', rssi: 3 }, { ssid: 'Telenor-5G', rssi: 2 }, { ssid: 'Guest', rssi: 1 }] },
+  entry: null, confirmStart: 0, message: '',
+};
+const MAX_PRESETS = 20;
+const SIDE_NAMES = ['mute', 'fav', 'back'];
+const CHARSET = (() => {
+  const groups = [
+    ['abc', 'abcdefghijklmnopqrstuvwxyz'.split('')],
+    ['ABC', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')],
+    ['123', '0123456789'.split('')],
+    ['#+=', '!@#$%&*-_.+=?/:;,\'"()'.split('')],
+    ['edit', ['SPACE', 'DEL', 'OK']],
+  ];
+  const ring = [], starts = [];
+  groups.forEach(([name, cs]) => { starts.push(ring.length); cs.forEach(c => ring.push({ c, g: name })); });
+  return { ring, starts };
+})();
+function startEntry(ssid) {
+  S.stack.push({ ...S.list });
+  S.entry = { ssid, value: '', idx: 0 };
+  S.view = 'entry';
+}
+function entryKey(k) { return k === 'SPACE' ? '␣' : k; }
+function bars(n) { return '|||'.slice(0, n).padEnd(3, '.'); }
+const isFM = () => S.mode === 'FM';
+const modeKey = () => S.mode === 'FM' ? 'FM' : S.mode === 'AM' ? 'AM' : 'SSB';
+const step = () => STEPS[modeKey()][Math.min(S.stepIdx[modeKey()], STEPS[modeKey()].length - 1)];
+function bandOf(f, fm) {
+  const b = BANDS.find(b => (b.m === 'FM') === fm && f >= b.lo && f <= b.hi);
+  return b || null;
+}
+function bandLabel() {
+  const b = bandOf(S.freq, isFM());
+  if (b) return b.n;
+  if (isFM()) return 'FM';
+  return S.freq < 300 ? 'LW' : S.freq < 1800 ? 'MW' : 'SW';
+}
+function clampFreq(f) { return isFM() ? Math.min(108000, Math.max(64000, f)) : Math.min(30000, Math.max(150, f)); }
+function fmtFreq() {
+  if (isFM()) return [(S.freq / 1000).toFixed(2), 'MHz'];
+  if (S.mode !== 'AM' && step()[0] < 1) return [S.freq.toFixed(2), 'kHz'];
+  return [String(Math.round(S.freq)), 'kHz'];
+}
+function rssi() {
+  let best = 0;
+  for (const [f, s] of STATIONS) {
+    if ((f >= 64000) !== isFM()) continue;
+    const tol = isFM() ? 120 : S.mode === 'AM' ? 4 : 2;
+    const v = s * Math.max(0, 1 - Math.abs(f - S.freq) / tol);
+    if (v > best) best = v;
+  }
+  return Math.min(5, Math.round(best + (Math.random() < 0.3 ? 1 : 0) * (best < 1 ? 1 : 0)));
+}
+// Translated string by key; %d and %s take the arguments in order, %% is a percent sign.
+function T(k, ...a) {
+  const s = (STRINGS[S.lang] || STRINGS.en)[k];
+  return s.replace(/%[ds%]/g, m => m === '%%' ? '%' : String(a.shift()));
+}
+function toast(t) { S.toast = { t, until: performance.now() + 1500 }; }
+
+// ---- menus ----
+function rangeStr(b) {
+  if (b.m === 'FM') return '87.5-108';
+  if (b.hi < 2000) return `${b.lo}-${b.hi}k`;
+  const two = `${(b.lo / 1000).toFixed(2)}-${(b.hi / 1000).toFixed(2)}`;
+  return two.length <= 11 ? two : `${(b.lo / 1000).toFixed(1)}-${(b.hi / 1000).toFixed(1)}`;
+}
+function row(l, r) { return { t: l, r: r || '' }; }
+function presetFreq(p) { return p.m === 'FM' ? (p.f / 1000).toFixed(1) + 'M' : p.f + 'k'; }
+
+const LISTS = {
+  main: () => ({ items: [
+    { ...row(T('band'), bandLabel()), go: 'bands' },
+    { ...row(T('mode'), S.mode), go: 'modes' },
+    { ...row(T('step'), step()[1]), go: 'steps' },
+    { ...row(T('bandwidth'), BWS[modeKey()][S.bwIdx[modeKey()]]), go: 'bw' },
+    { ...row(T('volume'), S.muted ? T('val_mute') : String(S.vol)), adjust: 'volume' },
+    { t: T('seek'), go: 'seek' },
+  ], gutter: [
+    { icon: 'presets', go: 'presets' },
+    { icon: S.muted ? 'muted' : 'volume', stay: () => { S.muted = !S.muted; } },
+    { icon: 'settings', go: 'settings' },
+  ] }),
+  bands: () => ({ icon: 'bands', cur: Math.max(0, BANDS.indexOf(bandOf(S.freq, isFM()))), items: BANDS.map(b => ({
+    t: b.n, mid: rangeStr(b), r: b.m === 'LSB' || b.m === 'USB' ? b.m : '', act: () => chooseBand(b) })) }),
+  modes: () => {
+    if (isFM()) return { icon: 'mode', items: [{ ...row('FM', T('only_fm')), act: () => {} }] };
+    const ms = ['AM', 'LSB', 'USB'];
+    const items = [{ t: 'AM', act: () => setMode('AM') }];
+    if (S.ssb) items.push({ ...row('LSB', T('lower_ssb')), act: () => setMode('LSB') }, { ...row('USB', T('upper_ssb')), act: () => setMode('USB') });
+    return { icon: 'mode', cur: ms.indexOf(S.mode), items };
+  },
+  presets: () => ({ icon: 'presets', cur: Math.max(0, S.presets.findIndex(p => p.f === S.freq && p.m === S.mode)), items: S.presets.map((p, i) => ({
+    ...row(`${i + 1} ${p.n}`, presetFreq(p)), act: () => tunePreset(i) })) }),
+  steps: () => ({ icon: 'steps', cur: S.stepIdx[modeKey()], items: STEPS[modeKey()].map((s, i) => ({ t: s[1], act: () => { S.stepIdx[modeKey()] = i; goHome(); } })) }),
+  bw: () => ({ icon: 'bw', cur: S.bwIdx[modeKey()], items: BWS[modeKey()].map((b, i) => ({ t: b, act: () => { S.bwIdx[modeKey()] = i; goHome(); } })) }),
+  seek: () => ({ icon: 'seek', items: [{ t: T('seek_up'), act: () => { goHome(); startSeek(1); } }, { t: T('seek_down'), act: () => { goHome(); startSeek(-1); } }] }),
+  side: () => ({ icon: 'settings', cur: SIDE_NAMES.indexOf(S.side), items: [
+    { t: T('side_mute'), act: () => setSide('mute') }, { t: T('side_next'), act: () => setSide('fav') }, { t: T('side_back'), act: () => setSide('back') }] }),
+  lang: () => ({ icon: 'settings', cur: Math.max(0, LANGS.findIndex(l => l[0] === S.lang)), items: LANGS.map(([c, n]) => ({ t: n, act: () => { S.lang = c; popTo(); } })) }),
+  wifi: () => ({ icon: 'wifi', items: [
+    { ...row(T('status'), S.wifi.joined ? 'radio.local' : T('not_joined')), info: 'wifi' },
+    ...S.wifi.nets.map(n => ({ ...row(n.ssid, n.ssid === S.wifi.joined ? '\u2713 ' + bars(n.rssi) : bars(n.rssi)), act: () => startEntry(n.ssid) })),
+  ] }),
+  settings: () => ({ icon: 'settings', items: [
+    { ...row(T('wifi'), S.wifi.joined || T('not_joined')), go: 'wifi' },
+    { ...row(T('agc'), S.agc ? T('on') : T('off')), stay: () => { S.agc = !S.agc; } },
+    { ...row(T('contrast'), String(S.contrast)), adjust: 'contrast' },
+    { ...row(T('light'), S.light ? String(S.light) : T('off')), adjust: 'light' },
+    { ...row(T('side_button'), T({ mute: 'val_mute', fav: 'val_preset', back: 'val_back' }[S.side])), go: 'side' },
+    { ...row(T('language'), LANGS.find(l => l[0] === S.lang)[1]), go: 'lang' },
+    { t: T('about'), info: 'about' },
+  ] }),
+};
+const INFO = {
+  wifi: { icon: 'wifi', get lines() { return S.wifi.joined ? [T('joined_s', S.wifi.joined), 'radio.local', S.wifi.ip] : [T('not_joined_cap'), T('access_point'), 'Havoc-Radio']; } },
+  about: { icon: 'settings', get lines() { return ['Havoc Radio ' + S.version, 'IP ' + (S.wifi.joined ? S.wifi.ip : '192.168.4.1'), T('battery_d', S.battery)]; } },
+};
+const ADJ = {
+  volume: { icon: 'volume', get title() { return T('volume'); }, min: 0, max: 63, get: () => S.vol, set: v => { S.vol = v; S.muted = false; }, done: () => goHome() },
+  contrast: { icon: 'settings', get title() { return T('contrast'); }, min: 1, max: 15, get: () => S.contrast, set: v => { S.contrast = v; }, done: () => popTo() },
+  light: { icon: 'settings', get title() { return T('light'); }, min: 0, max: 15, get: () => S.light, set: v => { S.light = v; }, done: () => popTo() },
+};
+
+function openList(id, from) {
+  if (from) S.stack.push(from);
+  const L = LISTS[id]();
+  const cur = L.cur ?? 0;
+  S.list = { id, cursor: L.items.length ? cur : -1, top: Math.max(0, Math.min(cur - 1, L.items.length - 4)) };
+  S.view = 'list';
+}
+function popTo() {
+  const prev = S.stack.pop();
+  if (!prev) return goHome();
+  S.list = prev; S.view = 'list';
+}
+function goHome() { S.view = 'home'; S.list = null; S.stack = []; S.adjust = null; S.info = null; }
+function chooseBand(b) {
+  const cb = bandOf(S.freq, isFM()); if (cb) cb.last = S.freq;
+  S.mode = usable(b.m); S.freq = b.last; goHome();
+}
+function setMode(m) { S.mode = m; if (m === 'AM') S.freq = Math.round(S.freq); goHome(); }
+function setSide(v) { S.side = v; popTo(); }
+function startConfirm() { S.view = 'confirm'; S.stack = []; S.confirmStart = performance.now(); }
+function cancelInstall() { toast(T('toast_cancelled')); goHome(); }
+function showMessage(m) { S.view = 'message'; S.stack = []; S.message = m; }
+function usable(m) { return (m === 'LSB' || m === 'USB') && !S.ssb ? 'AM' : m; }
+function tunePreset(i) { const p = S.presets[i]; S.mode = usable(p.m); S.freq = p.f; S.favIdx = i; goHome(); }
+function startSeek(dir) {
+  if (S.mode === 'LSB' || S.mode === 'USB') { toast(T('toast_no_seek')); return; }
+  const fm = isFM();
+  const cands = STATIONS.map(s => s[0]).filter(f => (f >= 64000) === fm).sort((a, b) => a - b);
+  let target = dir > 0 ? cands.find(f => f > S.freq + 0.5) : [...cands].reverse().find(f => f < S.freq - 0.5);
+  if (target === undefined) target = dir > 0 ? cands[0] : cands[cands.length - 1];
+  S.seek = { dir, target };
+}
+
+// ---- input handlers ----
+// ---- splash: the Hoverboard Havoc wheel rolls in, spinning, with flames streaming off its back ----
+const SPLASH_MS = 2600;
+// Five-spoke wheel (rim disc with five windows and a hub), a treaded tyre ring, and five flame tongues
+// trailing to the upper left whose lengths flicker on fixed sine phases.
+const TONGUES = [[-0.6, 6], [-0.15, 10], [0.3, 12], [0.75, 10], [1.2, 7]]; // [angle from "behind", length]
+function wheelLogo(cx, cy, phi, t, heat) {
+  for (let y = 0; y < H; y++) for (let x = Math.max(0, cx - 32); x <= Math.min(W - 1, cx + 14); x++) {
+    const dx = x - cx, dy = y - cy, r = Math.hypot(dx, dy), th = Math.atan2(dy, dx);
+    let on = false;
+    if (r <= 10.6) {
+      const f = ((((th - phi) / (2 * Math.PI)) * 5) % 1 + 1) % 1;
+      const window = r >= 3.4 && r <= 8.4 && f > 0.18 && f < 0.82;
+      on = !window && r >= 1.3;
+    } else if (r >= 12 && r <= 13.3) {
+      const g = ((((th - phi) / (2 * Math.PI)) * 16) % 1 + 1) % 1;
+      on = g >= 0.2;                               // tread notches turn with the wheel
+    } else if (r >= 14.5) {
+      let d = th - Math.PI; d = Math.atan2(Math.sin(d), Math.cos(d));
+      d -= 0.35 * (r - 14.5) / 10;                 // tongues curve back as they rise
+      let L = 0;
+      TONGUES.forEach(([u, len], k) => {
+        const flick = 0.72 + 0.28 * Math.sin(t * 0.013 * (1 + 0.37 * k) + k * 1.7);
+        L = Math.max(L, len * heat * flick * Math.max(0, 1 - Math.abs(d - u) / 0.3));
+      });
+      on = r - 14.5 < L;
+    }
+    if (on) px(x, y, 1);
+  }
+}
+function text2x(x, y, s) {
+  for (const ch of s) {
+    const g = PIP[ch] || PIP[' '];
+    g.forEach((row, j) => { for (let i = 0; i < row.length; i++) if (row[i] === '#') fill(x + 2 * i, y + 2 * j, 2, 2, 1); });
+    x += 2 * g[0].length + 2;
+  }
+}
+function drawSplash(now) {
+  const t = now - S.splashStart;
+  if (t > SPLASH_MS) return goHome();
+  const k = Math.min(1, t / 900), ease = 1 - Math.pow(1 - k, 3);
+  const cx = Math.round(-16 + ease * 33), cy = 16;
+  // rolling: angle follows distance travelled, then the wheel keeps idling round
+  const phi = (cx + 16) / 13 + Math.max(0, t - 900) * 0.004;
+  wheelLogo(cx, cy, phi, t, k < 1 ? 1.15 : 0.9);
+  // wordmark
+  if (t > 800) {
+    const n = Math.min(10, Math.floor((t - 800) / 45));
+    text(40, 1, 'HOVERBOARD'.slice(0, n));
+  }
+  if (t > 1250) {
+    text2x(40, 10, 'HAVOC');
+    const reveal = 40 + Math.min(52, Math.floor((t - 1250) / 6));
+    fill(reveal, 10, 128 - reveal, 13, 0);
+  }
+  if (t > 1700) textR(128, 24, 'radio');
+}
+function noteInput(s) { S.lastInput = performance.now(); document.getElementById('lastIn').textContent = s; }
+function onTurn(d) {
+  if (S.view === 'message') return;
+  if (S.view === 'splash') { noteInput('skip splash'); return goHome(); }
+  noteInput(d > 0 ? 'turn clockwise' : 'turn anticlockwise');
+  S.seek = null;
+  if (S.view === 'home') { S.freq = clampFreq(Math.round((S.freq + d * step()[0]) * 100) / 100); return; }
+  if (S.view === 'list') {
+    const ring = ringOf(LISTS[S.list.id]());
+    const i = ring.indexOf(S.list.cursor);
+    S.list.cursor = ring[(i + d + ring.length) % ring.length]; scrollTo();
+    return;
+  }
+  if (S.view === 'adjust') { const a = ADJ[S.adjust]; a.set(Math.min(a.max, Math.max(a.min, a.get() + d))); }
+  if (S.view === 'entry') { const n = CHARSET.ring.length; S.entry.idx = (S.entry.idx + d + n) % n; }
+}
+// Selection ring, clockwise: down the entries, then up the gutter (bottom slot first) to Back,
+// then round to the first entry. Gutter slot k is cursor -(k+1); Back is slot 0, cursor -1.
+function ringOf(L) {
+  const r = L.items.map((_, i) => i), g = 1 + (L.gutter ? L.gutter.length : 0);
+  for (let k = g - 1; k >= 0; k--) r.push(-(k + 1));
+  return r;
+}
+function scrollTo() {
+  const L = S.list, n = LISTS[L.id]().items.length;
+  if (L.cursor === -1) { L.top = 0; return; }
+  if (L.cursor < -1) return;
+  if (L.cursor < L.top) L.top = L.cursor;
+  if (L.cursor > L.top + 3) L.top = L.cursor - 3;
+  L.top = Math.max(0, Math.min(L.top, Math.max(0, n - 4)));
+}
+function onClick() {
+  if (S.view === 'message') return;
+  if (S.view === 'splash') { noteInput('skip splash'); return goHome(); }
+  noteInput('press');
+  S.seek = null;
+  if (S.view === 'home') return openList('main');
+  if (S.view === 'info') return popTo();
+  if (S.view === 'adjust') return ADJ[S.adjust].done();
+  if (S.view === 'confirm') return showMessage(T('installing'));
+  if (S.view === 'entry') {
+    const E = S.entry, k = CHARSET.ring[E.idx].c;
+    if (k === 'OK') { S.wifi.joined = E.ssid; toast(T('toast_joining', E.ssid)); S.entry = null; goHome(); return; }
+    if (k === 'DEL') { E.value = E.value.slice(0, -1); return; }
+    if (E.value.length < 64) E.value += k === 'SPACE' ? ' ' : k;
+    return;
+  }
+  if (S.view === 'list') {
+    if (S.list.cursor === -1) return popTo();
+    if (S.list.cursor < -1) {
+      const gi = LISTS[S.list.id]().gutter[-S.list.cursor - 2];
+      if (gi.go) return openList(gi.go, { ...S.list });
+      if (gi.stay) return gi.stay();
+    }
+    const it = LISTS[S.list.id]().items[S.list.cursor];
+    if (it.go) return openList(it.go, { ...S.list });
+    if (it.adjust) { S.stack.push({ ...S.list }); S.adjust = it.adjust; S.view = 'adjust'; return; }
+    if (it.info) { S.stack.push({ ...S.list }); S.info = it.info; S.view = 'info'; return; }
+    if (it.stay) return it.stay();
+    it.act();
+  }
+}
+function onLong() {
+  if (S.view === 'message') return;
+  if (S.view === 'splash') { noteInput('skip splash'); return goHome(); }
+  noteInput('long press');
+  S.seek = null;
+  if (S.view === 'confirm') return cancelInstall();
+  if (S.view === 'home') {
+    if (S.presets.length >= MAX_PRESETS) return toast(T('toast_full'));
+    S.presets.push({ n: bandLabel(), f: S.freq, m: S.mode });
+    toast(T('toast_saved', S.presets.length));
+    return;
+  }
+  goHome();
+}
+function onHoldTurn(d) {
+  if (S.view === 'message') return;
+  if (S.view === 'splash') { noteInput('skip splash'); return goHome(); }
+  noteInput(d > 0 ? 'hold + turn clockwise' : 'hold + turn anticlockwise');
+  S.seek = null;
+  if (S.view === 'home') { S.vol = Math.min(63, Math.max(0, S.vol + d)); S.muted = false; S.volUntil = performance.now() + 1500; return; }
+  if (S.view === 'list') {
+    const n = LISTS[S.list.id]().items.length;
+    S.list.cursor = Math.min(n - 1, Math.max(0, Math.max(0, S.list.cursor) + d * 4)); scrollTo();
+  }
+  if (S.view === 'entry') {
+    const st = CHARSET.starts, g = st.filter(i => i <= S.entry.idx).length - 1;
+    S.entry.idx = st[(g + d + st.length) % st.length];
+  }
+}
+function onSide() {
+  if (S.view === 'message') return;
+  if (S.view === 'splash') { noteInput('skip splash'); return goHome(); }
+  noteInput('side button (' + S.side + ')');
+  S.seek = null;
+  if (S.view === 'confirm') return cancelInstall();
+  if (S.side === 'mute') { S.muted = !S.muted; toast(S.muted ? T('toast_muted') : T('toast_sound')); return; }
+  if (S.side === 'fav' && !S.presets.length) return toast(T('toast_none'));
+  if (S.side === 'fav') { S.favIdx = (S.favIdx + 1) % S.presets.length; tunePreset(S.favIdx); toast(T('toast_preset', S.favIdx + 1, S.presets[S.favIdx].n)); return; }
+  if (S.view === 'list') return popTo();
+  if (S.view === 'info') return popTo();
+  if (S.view === 'adjust') return ADJ[S.adjust].done();
+  if (S.view === 'entry') { S.entry = null; return popTo(); }
+}
+
+// press / long press / hold+turn state machine
+const P = { down: false, turned: false, longFired: false, timer: 0 };
+function pressStart() {
+  if (P.down) return;
+  P.down = true; P.turned = false; P.longFired = false;
+  P.timer = setTimeout(() => { if (P.down && !P.turned) { P.longFired = true; onLong(); } }, 600);
+}
+function pressEnd() {
+  if (!P.down) return;
+  clearTimeout(P.timer); P.down = false;
+  if (!P.longFired && !P.turned) onClick();
+}
+function turn(d) {
+  if (P.down) { P.turned = true; clearTimeout(P.timer); onHoldTurn(d); } else onTurn(d);
+  knobAngle += d * 18; document.getElementById('knobRot').setAttribute('transform', `rotate(${knobAngle})`);
+}
+
+// ---- knob widget ----
+let knobAngle = 0;
+const ridges = document.getElementById('ridges');
+for (let i = 0; i < 40; i++) {
+  const a = i * 9 * Math.PI / 180;
+  const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  l.setAttribute('x1', 80 * Math.sin(a)); l.setAttribute('y1', -80 * Math.cos(a));
+  l.setAttribute('x2', 88 * Math.sin(a)); l.setAttribute('y2', -88 * Math.cos(a));
+  l.setAttribute('stroke', '#1a1f23'); l.setAttribute('stroke-width', '2.5');
+  ridges.appendChild(l);
+}
+const knob = document.getElementById('knob');
+let drag = null;
+function knobPoint(e) {
+  const r = knob.getBoundingClientRect();
+  const x = (e.clientX - r.left) / r.width * 200 - 100, y = (e.clientY - r.top) / r.height * 200 - 100;
+  return { x, y, d: Math.hypot(x, y), a: Math.atan2(x, -y) * 180 / Math.PI };
+}
+knob.addEventListener('pointerdown', e => {
+  const p = knobPoint(e);
+  knob.setPointerCapture(e.pointerId);
+  drag = { a: p.a, acc: 0, onCap: p.d < 42 };
+  if (drag.onCap) pressStart();
+  e.preventDefault();
+});
+knob.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const p = knobPoint(e);
+  if (p.d < 14) return;
+  let da = p.a - drag.a; if (da > 180) da -= 360; if (da < -180) da += 360;
+  drag.a = p.a; drag.acc += da;
+  while (drag.acc >= 18) { drag.acc -= 18; turn(1); }
+  while (drag.acc <= -18) { drag.acc += 18; turn(-1); }
+});
+const endDrag = () => { if (drag && drag.onCap) pressEnd(); drag = null; };
+knob.addEventListener('pointerup', endDrag);
+knob.addEventListener('pointercancel', endDrag);
+let wheelAcc = 0;
+knob.addEventListener('wheel', e => {
+  e.preventDefault();
+  wheelAcc += e.deltaY;
+  while (wheelAcc >= 30) { wheelAcc -= 30; turn(1); }
+  while (wheelAcc <= -30) { wheelAcc += 30; turn(-1); }
+}, { passive: false });
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { turn(1); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { turn(-1); e.preventDefault(); }
+  else if ((e.key === 'Enter' || e.key === ' ') && !e.repeat) { pressStart(); e.preventDefault(); }
+  else if ((e.key === 'b' || e.key === 'B') && !e.repeat) onSide();
+});
+document.addEventListener('keyup', e => { if (e.key === 'Enter' || e.key === ' ') pressEnd(); });
+document.getElementById('sideBtn').addEventListener('click', onSide);
+document.getElementById('replay').addEventListener('click', () => { goHome(); S.view = 'splash'; S.splashStart = performance.now(); });
+document.getElementById('simOta').addEventListener('click', () => startConfirm());
+document.getElementById('simEmpty').addEventListener('click', () => showMessage(T('battery_empty')));
+
+// ---- screens ----
+// Gutter: selectable controls only. Back at the top (reached by turning up past the first entry);
+// an optional foot control at the bottom (reached by turning down past the last entry).
+function drawGutter(cursor, gutter) {
+  if (cursor === -1) { fill(0, 0, 8, 8, 1); text(2, 0, '\u25c0', 0); } else text(2, 0, '\u25c0', 1);
+  (gutter || []).forEach((g, k) => {
+    const y = (k + 1) * 8, sel = cursor === -(k + 2);
+    if (sel) fill(0, y, 8, 8, 1);
+    icon(0, y, ICONS[g.icon], sel ? 0 : 1);
+  });
+}
+function drawHome(now) {
+  const [fs, unit] = fmtFreq();
+  // top row
+  if (now < S.volUntil) {
+    icon(0, 0, ICONS.volume);
+    const w = Math.round(S.vol / 63 * 90);
+    fill(10, 2, 90, 4, 0); for (let i = 10; i < 100; i += 2) px(i, 4, 1);
+    fill(10, 1, w, 5, 1);
+    textR(128, 0, String(S.vol));
+  } else if (S.toast && now < S.toast.until) {
+    fill(0, 0, 128, 8, 1); text(1, 0, S.toast.t, 0);
+  } else if (S.seek) {
+    text(0, 0, `${bandLabel()}  ${T('seek')} ${S.seek.dir > 0 ? '\u25b6' : '\u25c0'}`);
+  } else {
+    let x = text(0, 0, bandLabel());
+    x = text(x + 5, 0, S.mode);
+    // The step yields to the Mute flag when they would overlap.
+    const st = T('home_step') + ' ' + step()[1];
+    if (!S.muted || x + 5 + textW(st) < 80) text(x + 5, 0, st);
+    if (S.muted) { fill(80, 0, Math.max(22, textW(T('home_mute')) + 3), 8, 1); text(82, 0, T('home_mute'), 0); }
+  }
+  // signal bars, right of top row
+  if (now >= S.volUntil && !(S.toast && now < S.toast.until)) {
+    const r = rssi();
+    for (let i = 0; i < 5; i++) {
+      const h = 2 + i + (i > 2 ? 1 : 0), x = 108 + i * 4;
+      if (i < r) fill(x, 7 - h, 3, h, 1); else px(x + 1, 6, 1);
+    }
+  }
+  // position in band
+  const b = bandOf(S.freq, isFM());
+  if (b) {
+    for (let i = 0; i < 128; i += 4) px(i, 11, 1);
+    const p = Math.round((S.freq - b.lo) / (b.hi - b.lo) * 125);
+    fill(p, 9, 3, 5, 1);
+  }
+  // frequency
+  big(114 - bigW(fs), 14, fs);
+  textR(128, 24, unit);
+}
+function drawList() {
+  const L = LISTS[S.list.id](), n = L.items.length;
+  drawGutter(S.list.cursor, L.gutter);
+  for (let r = 0; r < 4; r++) {
+    const i = S.list.top + r; if (i >= n) break;
+    const sel = i === S.list.cursor, y = r * 8;
+    const it = L.items[i], c = sel ? 0 : 1;
+    if (sel) fill(9, y, 117, 8, 1);
+    text(11, y, it.t, c);
+    if (it.mid) text(32, y, it.mid, c);
+    if (it.r) textR(124, y, it.r, c);
+  }
+  if (n > 4) {
+    for (let y = 0; y < 32; y += 2) px(127, y, 1);
+    const th = Math.max(3, Math.round(32 * 4 / n)), ty = Math.round((32 - th) * S.list.top / (n - 4));
+    fill(127, ty, 1, th, 1);
+  }
+}
+function drawAdjust() {
+  const a = ADJ[S.adjust];
+  drawGutter(0);
+  text(10, 0, a.title);
+  const v = a.get(), w = Math.round((v - a.min) / (a.max - a.min) * 106);
+  for (let i = 10; i < 116; i += 2) px(i, 17, 1);
+  fill(10, 13, w, 9, 1);
+  textR(128, 24, `${v}/${a.max}`);
+}
+function drawEntry() {
+  const E = S.entry, ring = CHARSET.ring, cur = ring[E.idx];
+  text(0, 0, T('password_for', E.ssid));
+  textR(128, 0, cur.g === 'edit' ? T('group_edit') : cur.g);
+  let v = E.value;
+  while (textW(v) > 118) v = v.slice(1);
+  const ex = text(1, 8, v);
+  fill(ex + (v ? 1 : 0), 15, 4, 1, 1);
+  for (let x = 0; x < 128; x += 2) px(x, 17, 1);
+  const label = i => entryKey(ring[(i + ring.length) % ring.length].c);
+  const cw = l => textW(l) + 5;
+  const mid = 64, sel = label(E.idx), sw = cw(sel);
+  fill(mid - (sw >> 1), 21, sw, 10, 1);
+  text(mid - (sw >> 1) + 3, 22, sel, 0);
+  let x = mid + (sw >> 1) + 1;
+  for (let i = 1; x < 128; i++) { const l = label(E.idx + i); text(x + 2, 22, l); x += cw(l); }
+  x = mid - (sw >> 1) - 1;
+  for (let i = 1; x > 0; i++) { const l = label(E.idx - i); x -= cw(l); text(x + 3, 22, l); }
+}
+function drawConfirm() {
+  [T('confirm_title'), T('confirm_press'), T('confirm_long')].forEach((l, i) => text(10, i * 8 + 4, l));
+}
+function drawMessage() { text((W - textW(S.message)) >> 1, 12, S.message); }
+function drawInfo() {
+  const I = INFO[S.info];
+  drawGutter(-1);
+  I.lines.forEach((l, i) => text(10, i * 8 + 4, l));
+}
+
+// ---- render loop ----
+const cv = document.getElementById('oled'), cx = cv.getContext('2d');
+const c1 = document.getElementById('oled1x'), cx1 = c1.getContext('2d');
+let scale = 4;
+function fit() {
+  const avail = cv.parentElement.parentElement.clientWidth - 24;
+  scale = Math.max(2, Math.min(7, Math.floor(avail / W)));
+  cv.width = W * scale; cv.height = H * scale;
+  document.getElementById('scaleLabel').textContent = `${scale}× scale`;
+}
+addEventListener('resize', fit);
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function present() {
+  const on = cssVar('--oled-on'), off = cssVar('--oled-off');
+  const alpha = 0.35 + 0.65 * (S.contrast / 15);
+  cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height);
+  const g = scale >= 4 ? 1 : 0;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const lit = fb[y * W + x];
+    cx.globalAlpha = lit ? alpha : 1;
+    cx.fillStyle = lit ? on : off;
+    cx.fillRect(x * scale, y * scale, scale - g, scale - g);
+  }
+  cx.globalAlpha = 1;
+  const img = cx1.createImageData(W, H);
+  for (let i = 0; i < W * H; i++) { const v = fb[i] ? Math.round(255 * alpha) : 0; img.data.set([v, v, v, 255], i * 4); }
+  cx1.putImageData(img, 0, 0);
+}
+let lastSeekStep = 0;
+function frame(now) {
+  if (!S.splashStart) S.splashStart = now;
+  if (['list', 'adjust', 'info'].includes(S.view) && now - S.lastInput > 8000) goHome();
+  if (S.view === 'confirm' && now - S.confirmStart > 30000) cancelInstall();
+  document.getElementById('sideLabel').textContent = { mute: 'mute', fav: 'next preset', back: 'back' }[S.side];
+  if (S.seek && now - lastSeekStep > 25) {
+    lastSeekStep = now;
+    const st = isFM() ? 100 : 5, t = S.seek.target;
+    if (Math.abs(t - S.freq) <= st) { S.freq = t; S.seek = null; }
+    else S.freq = clampFreq(Math.round(S.freq + Math.sign(t - S.freq) * st));
+  }
+  clear();
+  if (S.view === 'splash') drawSplash(now);
+  else if (S.view === 'home') drawHome(now);
+  else if (S.view === 'list') drawList();
+  else if (S.view === 'adjust') drawAdjust();
+  else if (S.view === 'info') drawInfo();
+  else if (S.view === 'entry') drawEntry();
+  else if (S.view === 'confirm') drawConfirm();
+  else if (S.view === 'message') drawMessage();
+  present();
+  requestAnimationFrame(frame);
+}
+fit();
+requestAnimationFrame(frame);
+</script>

@@ -1,0 +1,128 @@
+// Radio model: bands, modes, steps, bandwidths, presets and the commands that change them.
+// Pure C++: compiled into the firmware and into the host tests.
+#pragma once
+#include <cstddef>
+#include <cstdint>
+
+namespace radio {
+
+enum class Mode : uint8_t { FM, AM, LSB, USB };
+// Steps and bandwidths are kept per mode family.
+enum Family : uint8_t { kFamFM, kFamAM, kFamSSB, kFamilies };
+
+enum class Side : uint8_t { Mute, NextPreset, Back };
+
+struct Band {
+    const char* name;
+    int32_t lo;  // kHz
+    int32_t hi;  // kHz
+    Mode mode;
+};
+constexpr int kBandCount = 25;
+extern const Band kBands[kBandCount];
+// Outside the named bands AM is LW and MW below this frequency and SW from it up.
+constexpr int32_t kSwLoKhz = 1800;
+
+struct Step {
+    int32_t hz;
+    const char* label;
+};
+
+constexpr int kMaxPresets = 20;
+constexpr int kPresetName = 11;  // up to 10 characters
+
+struct Preset {
+    char name[kPresetName];
+    Mode mode;
+    int32_t hz;
+};
+
+constexpr int kVolumeMax = 63;
+constexpr int kContrastMin = 1;
+constexpr int kContrastMax = 15;
+constexpr int kLightMax = 15;
+
+struct State {
+    int32_t hz;  // tuned frequency in Hz; SSB tunes in 10 Hz steps
+    Mode mode;
+    uint8_t stepIdx[kFamilies];
+    uint8_t bwIdx[kFamilies];
+    uint8_t volume;
+    bool muted;
+    bool agc;
+    uint8_t contrast;
+    uint8_t light;
+    Side side;
+    uint8_t lang;  // index into the UI language list
+    int32_t bandLast[kBandCount];  // Hz
+    uint8_t presetCount;
+    Preset presets[kMaxPresets];
+};
+
+void defaults(State& s);
+
+const char* modeName(Mode m);
+bool parseMode(const char* s, Mode* out);
+Family family(Mode m);
+bool isFm(Mode m);
+
+const Step* steps(Family f, int* count);
+const char* const* bandwidths(Family f, int* count);
+const Step& currentStep(const State& s);
+const char* currentBandwidth(const State& s);
+
+int32_t clampHz(int32_t hz, Mode m);
+int bandIndex(int32_t hz, Mode m);  // -1 outside every named band
+const char* bandLabel(int32_t hz, Mode m);
+int32_t bandDefaultHz(int band);
+// AM antenna tuning capacitor (ANTCAP) for a tuned frequency: 0 (automatic, tuned for a ferrite loop) on LW and
+// MW, 1 on SW for a whip or wire, as the stock firmware sets it.
+uint16_t amAntennaCap(int32_t khz);
+
+// Text forms used by the display and the web page.
+void freqText(const State& s, char* num, size_t n, const char** unit);  // "100.70" "MHz"
+void presetFreqText(const Preset& p, char* out, size_t n);              // "100.7M", "7100k"
+void rangeText(const Band& b, char* out, size_t n);                     // "87.5-108", "5.90-6.20"
+
+enum class Cmd : uint8_t {
+    Tune,         // v = Hz
+    Band,         // v = band index
+    SetMode,      // v = Mode
+    Step,         // v = index for the current mode family
+    Bandwidth,    // v = index for the current mode family
+    Volume,       // v = 0..63, unmutes
+    Mute,         // v = 0/1
+    Agc,          // v = 0/1
+    Contrast,     // v = 1..15
+    Light,        // v = 0..15
+    SideAction,   // v = Side
+    Language,     // v = language index
+    SavePreset,   // current frequency, named after the band
+    TunePreset,   // v = index
+    Seek,         // v = +1 / -1
+    SeekStop,
+    Scan,         // WiFi scan
+    Join,         // WiFi join with the text-entry credentials
+    Install,      // confirm a pending firmware update
+    CancelInstall,
+    SplashEnd,    // the splash ended or was skipped: WiFi starts
+};
+
+struct Command {
+    Cmd cmd;
+    int32_t v;
+};
+
+// Applies a state command. Commands that do not change the model (seek, WiFi, install) return false.
+bool apply(State& s, const Command& c, bool ssb);
+
+// Preset editing for the web API.
+bool presetAdd(State& s, const char* name, int32_t hz, Mode m);
+bool presetRename(State& s, int i, const char* name);
+bool presetMove(State& s, int from, int to);
+bool presetDelete(State& s, int i);
+
+// JavaScript Math.round: nearest integer, ties toward +infinity.
+double jsRound(double x);
+
+}  // namespace radio

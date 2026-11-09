@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Havoc Radio</title>
+<style>
+:root { --bg: #f4f5f2; --card: #fff; --ink: #1d2320; --muted: #5d6762; --line: #d5dad6; --accent: #2f7d6b; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121514; --card: #1a1e1c; --ink: #e3e8e4; --muted: #98a39d; --line: #2c3330; --accent: #5fbfa6; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 640px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
+header { display: flex; justify-content: space-between; align-items: baseline; }
+h1 { font-size: 1.3rem; margin: 0; }
+h2 { font-size: 1rem; margin: 0 0 8px; }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+.freq { font: 600 2.6rem/1.1 ui-monospace, Menlo, monospace; }
+.freq small { font-size: 1rem; color: var(--muted); margin-left: 6px; }
+.meta { color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+label { display: grid; gap: 4px; color: var(--muted); font-size: 0.85rem; }
+input, select, button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+button { cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+input[type=range] { width: 100%; padding: 0; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 4px 2px; border-top: 1px solid var(--line); }
+td.f { color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
+td.a { text-align: right; white-space: nowrap; }
+td.a button { padding: 2px 7px; }
+.bars { font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
+#status { color: var(--muted); font-size: 0.85rem; }
+#otaMsg { color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Havoc Radio</h1><span id="status"></span></header>
+
+  <section>
+    <div class="freq"><span id="freq">--</span><small id="unit"></small></div>
+    <div class="meta"><span id="band"></span><span id="mode"></span><span><span data-t="web_signal"></span>
+      <span class="bars" id="bars"></span> <span id="rssi"></span></span></div>
+    <div class="row">
+      <button id="down" type="button">&minus;</button>
+      <input id="tuneIn" inputmode="decimal" size="10">
+      <button id="tune" type="button" class="primary" data-t="web_tune"></button>
+      <button id="up" type="button">+</button>
+    </div>
+  </section>
+
+  <section class="grid">
+    <label><span data-t="band"></span><select id="bandSel"></select></label>
+    <label><span data-t="mode"></span><select id="modeSel"></select></label>
+    <label><span data-t="step"></span><select id="stepSel"></select></label>
+    <label><span data-t="bandwidth"></span><select id="bwSel"></select></label>
+    <label><span data-t="volume"></span><input id="vol" type="range" min="0" max="63"></label>
+    <label><span data-t="side_mute"></span><input id="mute" type="checkbox"></label>
+  </section>
+
+  <section>
+    <h2 data-t="web_presets"></h2>
+    <table><tbody id="presets"></tbody></table>
+    <div class="row">
+      <input id="presetName" maxlength="10" data-ph="web_name">
+      <button id="presetAdd" type="button" data-t="web_add"></button>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-t="wifi"></h2>
+    <div id="wifiState" class="meta"></div>
+    <div class="row">
+      <input id="ssid" maxlength="32" data-ph="web_network">
+      <input id="pass" type="password" maxlength="64" data-ph="web_password">
+      <button id="join" type="button" data-t="web_join"></button>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-t="web_firmware"></h2>
+    <div class="row">
+      <input id="fw" type="file" accept=".bin">
+      <button id="upload" type="button" data-t="web_upload"></button>
+    </div>
+    <p id="otaMsg"></p>
+    <div class="meta"><span id="version"></span><span id="battery"></span></div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let T = {}, lang = '', st = null;
+
+const t = k => T[k] || k;
+async function loadStrings() {
+  T = await (await fetch('/api/strings')).json();
+  document.querySelectorAll('[data-t]').forEach(e => { e.textContent = t(e.dataset.t); });
+  document.querySelectorAll('[data-ph]').forEach(e => { e.placeholder = t(e.dataset.ph); });
+  document.documentElement.lang = lang || 'en';
+  if (st) render(st);
+}
+
+async function post(url, body, method = 'POST') {
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+  if (r.ok) render(await r.json());
+}
+
+function fill(sel, items, value) {
+  if (document.activeElement === sel) return;
+  const key = items.join('|');
+  if (sel.dataset.key !== key) {
+    sel.innerHTML = '';
+    items.forEach((v, i) => { const o = document.createElement('option'); o.value = i; o.textContent = v; sel.appendChild(o); });
+    sel.dataset.key = key;
+  }
+  sel.value = value;
+}
+
+function render(s) {
+  s = st = Object.assign(st || {}, s);
+  if (s.lang !== lang) { lang = s.lang; loadStrings(); }
+  $('freq').textContent = s.freq;
+  $('unit').textContent = s.unit;
+  $('band').textContent = s.band;
+  $('mode').textContent = s.mode;
+  $('bars').textContent = '▂▃▅▆█'.slice(0, s.bars).padEnd(5, '·');
+  $('rssi').textContent = `${s.rssi} dBµV, ${s.snr} dB`;
+  if (document.activeElement !== $('tuneIn')) $('tuneIn').value = s.mode === 'FM' ? (s.hz / 1e6).toFixed(2) : (s.hz / 1e3).toString();
+  if (s.bands) fill($('bandSel'), s.bands, Math.max(0, s.bands.indexOf(s.band)));
+  const modes = s.mode === 'FM' ? ['FM'] : s.ssb ? ['AM', 'LSB', 'USB'] : ['AM'];
+  fill($('modeSel'), modes, modes.indexOf(s.mode));
+  fill($('stepSel'), s.steps, s.stepIndex);
+  fill($('bwSel'), s.bandwidths, s.bwIndex);
+  if (document.activeElement !== $('vol')) $('vol').value = s.volume;
+  $('mute').checked = s.muted;
+  const tb = $('presets');
+  tb.innerHTML = '';
+  s.presets.forEach((p, i) => {
+    const tr = document.createElement('tr');
+    const name = document.createElement('td');
+    const a = document.createElement('a');
+    a.href = '#'; a.textContent = `${i + 1} ${p.name}`;
+    a.onclick = e => { e.preventDefault(); post('/api/presets', { action: 'tune', index: i }); };
+    name.appendChild(a);
+    const f = document.createElement('td'); f.className = 'f'; f.textContent = `${p.text} ${p.mode}`;
+    const act = document.createElement('td'); act.className = 'a';
+    const btn = (label, title, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.title = title; b.onclick = fn; act.appendChild(b); };
+    btn('✎', t('web_rename'), () => { const n = prompt(t('web_name'), p.name); if (n) post('/api/presets', { action: 'rename', index: i, name: n }); });
+    btn('↑', t('web_up'), () => i > 0 && post('/api/presets', { action: 'move', from: i, to: i - 1 }));
+    btn('↓', t('web_down'), () => i < s.presets.length - 1 && post('/api/presets', { action: 'move', from: i, to: i + 1 }));
+    btn('✕', t('web_delete'), () => post(`/api/presets?index=${i}`, null, 'DELETE'));
+    tr.append(name, f, act);
+    tb.appendChild(tr);
+  });
+  $('wifiState').textContent = s.wifi.joined ? `${t('joined_s').replace('%s', s.wifi.ssid)} · ${s.wifi.ip}`
+    : `${t('not_joined_cap')} · ${t('access_point')} Havoc-Radio`;
+  $('version').textContent = `Havoc Radio ${s.version}`;
+  $('battery').textContent = t('battery_d').replace('%d', s.battery).replace('%%', '%');
+}
+
+function tuneTo(hz) { post('/api/tune', { hz: Math.round(hz) }); }
+$('tune').onclick = () => {
+  const v = parseFloat($('tuneIn').value.replace(',', '.'));
+  if (!isNaN(v)) tuneTo(v * (st.mode === 'FM' ? 1e6 : 1e3));
+};
+$('tuneIn').onkeydown = e => { if (e.key === 'Enter') $('tune').onclick(); };
+$('up').onclick = () => tuneTo(st.hz + st.stepHz);
+$('down').onclick = () => tuneTo(st.hz - st.stepHz);
+$('bandSel').onchange = e => post('/api/band', { band: st.bands[e.target.value] });
+$('modeSel').onchange = e => post('/api/mode', { mode: e.target.selectedOptions[0].textContent });
+$('stepSel').onchange = e => post('/api/step', { index: +e.target.value });
+$('bwSel').onchange = e => post('/api/bandwidth', { index: +e.target.value });
+$('vol').onchange = e => post('/api/volume', { volume: +e.target.value });
+$('mute').onchange = e => post('/api/volume', { mute: e.target.checked });
+$('presetAdd').onclick = () => { post('/api/presets', { action: 'add', name: $('presetName').value }); $('presetName').value = ''; };
+$('join').onclick = () => post('/api/wifi', { ssid: $('ssid').value, password: $('pass').value });
+$('upload').onclick = async () => {
+  const f = $('fw').files[0];
+  if (!f) return;
+  $('otaMsg').textContent = t('web_press');
+  try {
+    const r = await fetch('/api/ota', { method: 'POST', body: f });
+    $('otaMsg').textContent = r.ok ? t('web_installing') : `${t('web_failed')}: ${await r.text()}`;
+  } catch (e) { $('otaMsg').textContent = t('web_failed'); }
+};
+
+async function start() {
+  render(await (await fetch('/api/state')).json());
+  const es = new EventSource('/api/events');
+  es.addEventListener('state', e => { render(JSON.parse(e.data)); $('status').textContent = ''; });
+  es.onerror = () => { $('status').textContent = t('web_offline'); };
+}
+start();
+</script>
+</body>
+</html>

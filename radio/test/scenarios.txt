@@ -1,0 +1,484 @@
+# UI scenarios. Each one starts at power-on (splash at t=0) from the prototype's demo state and is replayed
+# both in the prototype (tools/gen_goldens.py, which writes test/golden/<name>[_<label>].pbm) and in the
+# firmware UI (host tests), which must render the same frames.
+#
+#   scenario NAME
+#   [@T] OP [ARGS]     T in ms since power-on; without @T a line runs 100 ms after the previous one,
+#                      and the first line of a scenario runs at 3000 ms.
+#   OPs: turn N | hold N | press | long | side | render [LABEL]
+#        set bars N | set ssb 0|1 | set wifi off | set lang CODE | ota | empty
+
+scenario splash
+@0 render t0000
+@150 render t0150
+@300 render t0300
+@450 render t0450
+@600 render t0600
+@900 render t0900
+@1000 render t1000
+@1100 render t1100
+@1300 render t1300
+@1400 render t1400
+@1600 render t1600
+@1800 render t1800
+@2500 render t2500
+
+scenario splash_skip
+@500 turn 1
+@600 render
+
+scenario home
+render
+
+scenario home_bars
+set bars 5
+render five
+set bars 0
+render zero
+
+scenario home_outside
+turn 30
+render
+
+scenario home_volume
+hold 3
+render
+@5000 render after
+
+scenario home_mute
+side
+render toast
+@5000 render flag
+side
+render sound
+
+scenario home_preset_save
+long
+render
+
+scenario home_fm
+press
+press
+turn -9
+press
+render
+turn 3
+render tuned
+
+scenario home_mw
+press
+press
+turn -7
+press
+render
+
+scenario home_ssb
+press
+press
+turn 1
+press
+render
+press
+turn 2
+press
+turn -2
+press
+turn 7
+render fine
+
+scenario home_seek
+press
+turn 5
+press
+press
+render
+turn 1
+render stopped
+
+scenario home_seek_down
+press
+turn 5
+press
+turn 1
+press
+render
+
+scenario menu_main
+press
+render
+turn -1
+render back
+turn -1
+render presets
+turn -1
+render mute
+turn -1
+render settings
+turn -1
+render seek
+turn 1
+turn 1
+render wrap
+press
+render muted
+
+scenario menu_timeout
+press
+@11000 render
+@11200 render later
+
+scenario long_goes_home
+press
+press
+long
+render
+
+scenario bands
+press
+press
+render
+turn -9
+render top
+hold 4
+render jump
+hold 10
+render bottom
+turn 1
+render back
+
+scenario modes
+press
+turn 1
+press
+render
+set ssb 0
+render nossb
+
+scenario modes_fm
+press
+press
+turn -9
+press
+press
+turn 1
+press
+render
+
+scenario presets
+press
+turn -2
+press
+render
+turn 1
+press
+render tuned
+
+scenario steps
+press
+turn 2
+press
+render
+turn 2
+press
+render chosen
+
+scenario bandwidth
+press
+turn 3
+press
+render
+press
+press
+press
+turn -9
+press
+press
+turn 3
+press
+render fm
+
+scenario seek_list
+press
+turn 5
+press
+render
+
+scenario volume
+press
+turn 4
+press
+render
+turn -4
+render lower
+press
+render home
+
+scenario settings
+press
+turn -4
+press
+render
+turn 6
+render about
+press
+render info
+press
+render back
+
+scenario contrast
+press
+turn -4
+press
+turn 2
+press
+render
+turn -4
+render lower
+press
+render back
+
+scenario light
+press
+turn -4
+press
+turn 3
+press
+render
+turn 6
+render on
+press
+render back
+
+scenario agc
+press
+turn -4
+press
+turn 1
+press
+render
+
+scenario side_setting
+press
+turn -4
+press
+turn 4
+press
+render
+turn 1
+press
+render chosen
+long
+side
+render next
+side
+render next2
+
+scenario side_back
+press
+turn -4
+press
+turn 4
+press
+turn 2
+press
+long
+press
+press
+render
+side
+render popped
+side
+render home
+
+scenario wifi
+press
+turn -4
+press
+press
+render
+press
+render info
+press
+turn 2
+render net
+
+scenario wifi_off
+set wifi off
+press
+turn -4
+press
+render settings
+press
+render
+press
+render info
+
+scenario about_ap
+set wifi off
+press
+turn -4
+press
+turn 6
+press
+render
+
+scenario entry
+press
+turn -4
+press
+press
+turn 2
+press
+render
+press
+render a
+turn 7
+press
+hold 1
+turn 3
+press
+hold 1
+turn 1
+press
+render typed
+hold 1
+render symbols
+hold 1
+render edit
+turn -2
+render paren
+hold -1
+hold -1
+hold -1
+hold -1
+hold -1
+render wrapped
+
+scenario entry_long
+press
+turn -4
+press
+press
+turn 2
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+render
+hold -1
+turn 1
+press
+render del
+turn 1
+press
+render joined
+@20000 render settled
+
+scenario entry_cancel
+press
+turn -4
+press
+press
+turn 1
+press
+press
+long
+render
+
+scenario confirm
+ota
+render
+press
+render installing
+turn 1
+render ignored
+
+scenario confirm_cancel
+ota
+long
+render
+@40000 render later
+
+scenario confirm_timeout
+ota
+@34000 render
+
+scenario battery_empty
+empty
+render
+press
+render ignored
+
+scenario language
+press
+turn -4
+press
+turn 5
+render setting
+press
+render list
+press
+turn 4
+press
+render german
+
+scenario lang_home
+set lang cs
+side
+@5000 render muted
+press
+render menu
+turn -4
+press
+render settings
+turn 6
+press
+render about
+
+scenario lang_entry
+set lang fr
+press
+turn -4
+press
+press
+turn 2
+press
+render
+hold -1
+render edit
+
+scenario lang_toasts
+set lang sv
+long
+render saved
+@5000 ota
+render confirm
+long
+render cancelled

@@ -1,0 +1,7 @@
+dependencies:
+  idf:
+    version: '>=5.4.0'
+  # mDNS is a managed component in ESP-IDF v5.x.
+  espressif/mdns: ^1.0
+  # The header install: ESP8266 serial bootloader protocol and flasher stub.
+  espressif/esp-serial-flasher: 2.1.0

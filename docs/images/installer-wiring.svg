@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="1116" viewBox="0 0 360 744" font-family="Helvetica, Arial, sans-serif" font-size="12" role="img" aria-label="Wiring of the ESP32-C3 SuperMini to the radio's serial header U15">
+  <rect width="360" height="744" rx="8" fill="#fbfbf7"/>
+  <text x="180" y="24" text-anchor="middle" font-size="14" font-weight="bold" fill="#222">SuperMini to the radio's header U15</text>
+  <text x="180" y="42" text-anchor="middle" fill="#555">SuperMini from the top, USB-C up</text>
+
+  <!-- ESP32-C3 SuperMini: 2 x 8 pins, 2.54 mm apart -->
+  <rect x="110" y="70" width="140" height="210" rx="10" fill="#2b2b2b" stroke="#000"/>
+  <rect x="155" y="54" width="50" height="24" rx="5" fill="#b5b5b5" stroke="#555"/>
+  <text x="180" y="70" text-anchor="middle" fill="#222">USB-C</text>
+  <text x="180" y="168" text-anchor="middle" fill="#ccc">ESP32-C3</text>
+  <text x="180" y="184" text-anchor="middle" fill="#ccc">SuperMini</text>
+  <!-- left column, top to bottom: 5 6 7 8 9 10 20 21 -->
+  <g fill="#fff">
+    <text x="135" y="102">5</text>
+    <text x="135" y="124">6</text>
+    <text x="135" y="146">7</text>
+    <text x="135" y="168">8</text>
+    <text x="135" y="190">9</text>
+    <text x="135" y="212">10</text>
+    <text x="135" y="234">20</text>
+    <text x="135" y="256">21</text>
+  </g>
+  <!-- right column, top to bottom: 5V G 3V 4 3 2 1 0 -->
+  <g fill="#fff" text-anchor="end">
+    <text x="225" y="102">5V</text>
+    <text x="225" y="124">G</text>
+    <text x="225" y="146">3V</text>
+    <text x="225" y="168">4</text>
+    <text x="225" y="190">3</text>
+    <text x="225" y="212">2</text>
+    <text x="225" y="234">1</text>
+    <text x="225" y="256">0</text>
+  </g>
+  <g fill="#777" stroke="#000">
+    <circle cx="124" cy="164" r="5"/>
+    <circle cx="124" cy="186" r="5"/>
+    <circle cx="124" cy="208" r="5"/>
+    <circle cx="124" cy="230" r="5"/>
+    <circle cx="124" cy="252" r="5"/>
+    <circle cx="236" cy="98" r="5"/>
+    <circle cx="236" cy="142" r="5"/>
+    <circle cx="236" cy="186" r="5"/>
+    <circle cx="236" cy="208" r="5"/>
+    <circle cx="236" cy="230" r="5"/>
+    <circle cx="236" cy="252" r="5"/>
+  </g>
+
+  <!-- the radio's U15 header as printed on the board: both label rows above the holes -->
+  <rect x="118" y="326" width="124" height="144" fill="#4b2a6b"/>
+  <line x1="110" y1="470" x2="250" y2="470" stroke="#222" stroke-width="2"/>
+  <text x="180" y="488" text-anchor="middle" fill="#555">edge of the board, battery end</text>
+  <g fill="#fff" text-anchor="middle">
+    <text x="145" y="346">TXD</text>
+    <text x="180" y="346">IO0</text>
+    <text x="215" y="346">GND</text>
+    <text x="145" y="360">RXD</text>
+    <text x="180" y="360">EN</text>
+    <text x="215" y="360">VIN</text>
+    <text x="180" y="466">U15</text>
+  </g>
+  <g fill="#d8c08a" stroke="#8a7440">
+    <circle cx="145" cy="392" r="8"/>
+    <circle cx="180" cy="392" r="8"/>
+    <circle cx="215" cy="392" r="8"/>
+    <circle cx="145" cy="427" r="8"/>
+    <circle cx="180" cy="427" r="8"/>
+  </g>
+  <circle cx="215" cy="427" r="8" fill="#8a8a8a" stroke="#555"/>
+  <path d="M209,421 L221,433 M221,421 L209,433" stroke="#fff" stroke-width="2"/>
+
+  <!-- wires: a light halo under each shows which one passes over at a crossing -->
+  <g fill="none" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M236,164 H344 V450 H145 V427" stroke="#1f5fbf" stroke-width="3.5"/>
+    <path d="M236,120 H326 V392 H215" stroke="#fbfbf7" stroke-width="7"/>
+    <path d="M236,120 H326 V392 H215" stroke="#222" stroke-width="3.5"/>
+    <path d="M124,142 H38 V414 H180 V427" stroke="#fbfbf7" stroke-width="7"/>
+    <path d="M124,142 H38 V414 H180 V427" stroke="#1a8a3a" stroke-width="3.5"/>
+    <path d="M124,120 H26 V370 H180 V392" stroke="#fbfbf7" stroke-width="7"/>
+    <path d="M124,120 H26 V370 H180 V392" stroke="#8e3fb0" stroke-width="3.5"/>
+    <path d="M124,98 H14 V392 H145" stroke="#fbfbf7" stroke-width="7"/>
+    <path d="M124,98 H14 V392 H145" stroke="#d06000" stroke-width="3.5"/>
+  </g>
+
+  <!-- the five used pins and holes -->
+  <g stroke="#fff" stroke-width="1.5">
+    <circle cx="124" cy="98" r="6" fill="#d06000"/>
+    <circle cx="124" cy="120" r="6" fill="#8e3fb0"/>
+    <circle cx="124" cy="142" r="6" fill="#1a8a3a"/>
+    <circle cx="236" cy="120" r="6" fill="#222"/>
+    <circle cx="236" cy="164" r="6" fill="#1f5fbf"/>
+  </g>
+  <g stroke-width="2.5" fill="#222">
+    <circle cx="145" cy="392" r="4.5" stroke="#d06000"/>
+    <circle cx="180" cy="392" r="4.5" stroke="#8e3fb0"/>
+    <circle cx="215" cy="392" r="4.5" stroke="#222" fill="#fff"/>
+    <circle cx="145" cy="427" r="4.5" stroke="#1f5fbf"/>
+    <circle cx="180" cy="427" r="4.5" stroke="#1a8a3a"/>
+  </g>
+
+  <!-- labels at the C3 end: where the wire goes -->
+  <g text-anchor="end" font-weight="bold">
+    <text x="106" y="94" fill="#d06000">to TXD</text>
+    <text x="106" y="116" fill="#8e3fb0">to IO0</text>
+    <text x="106" y="138" fill="#1a8a3a">to EN</text>
+  </g>
+  <g font-weight="bold">
+    <text x="254" y="116" fill="#222">to GND</text>
+    <text x="254" y="160" fill="#1f5fbf">to RXD</text>
+  </g>
+  <!-- labels at the header end: where the wire comes from -->
+  <g text-anchor="end" font-weight="bold">
+    <text x="114" y="366" fill="#8e3fb0">GPIO6</text>
+    <text x="114" y="388" fill="#d06000">GPIO5</text>
+    <text x="114" y="410" fill="#1a8a3a">GPIO7</text>
+  </g>
+  <g font-weight="bold">
+    <text x="248" y="388" fill="#222">G</text>
+    <text x="248" y="446" fill="#1f5fbf">GPIO4</text>
+  </g>
+
+  <!-- the same as a table -->
+  <g fill="#222">
+    <text x="16" y="520" font-weight="bold">SuperMini</text>
+    <text x="96" y="520" font-weight="bold">U15</text>
+    <text x="150" y="520" font-weight="bold">Signal</text>
+    <line x1="16" y1="527" x2="344" y2="527" stroke="#bbb"/>
+    <rect x="16" y="535" width="14" height="8" fill="#1f5fbf"/>
+    <text x="36" y="543">GPIO4</text><text x="96" y="543">RXD</text><text x="150" y="543">SuperMini TX to radio RX</text>
+    <rect x="16" y="553" width="14" height="8" fill="#d06000"/>
+    <text x="36" y="561">GPIO5</text><text x="96" y="561">TXD</text><text x="150" y="561">radio TX to SuperMini RX</text>
+    <rect x="16" y="571" width="14" height="8" fill="#8e3fb0"/>
+    <text x="36" y="579">GPIO6</text><text x="96" y="579">IO0</text><text x="150" y="579">download mode</text>
+    <rect x="16" y="589" width="14" height="8" fill="#1a8a3a"/>
+    <text x="36" y="597">GPIO7</text><text x="96" y="597">EN</text><text x="150" y="597">reset</text>
+    <rect x="16" y="607" width="14" height="8" fill="#222"/>
+    <text x="36" y="615">G</text><text x="96" y="615">GND</text><text x="150" y="615">ground</text>
+    <line x1="16" y1="624" x2="344" y2="624" stroke="#bbb"/>
+  </g>
+  <g fill="#222">
+    <text x="16" y="644">TX goes to RX: the SuperMini sends on GPIO4</text>
+    <text x="16" y="660">to RXD and receives the radio's TXD on GPIO5.</text>
+    <text x="16" y="680">VIN stays unconnected.</text>
+    <text x="16" y="698">The radio must be switched on.</text>
+    <text x="16" y="716">A 2×3 piece of right-angle 2.54 mm double-row</text>
+    <text x="16" y="730">pin header fits U15.</text>
+  </g>
+</svg>

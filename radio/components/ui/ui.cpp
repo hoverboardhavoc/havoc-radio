@@ -1,0 +1,801 @@
+#include "ui.h"
+
+#include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <vector>
+
+#include "i18n_strings.h"
+
+namespace ui {
+
+using gfx::Frame;
+using radio::Cmd;
+using radio::Mode;
+using radio::State;
+using i18n::Str;
+
+namespace {
+
+constexpr double kPi = 3.14159265358979323846;
+
+int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
+int mod(int a, int n) { return ((a % n) + n) % n; }
+int jsRoundI(double x) { return static_cast<int>(radio::jsRound(x)); }
+
+void copy(char* dst, size_t n, const char* src) {
+    std::strncpy(dst, src, n - 1);
+    dst[n - 1] = 0;
+}
+
+// ---- text entry character ring ----
+const char* const kGroupName[] = {"abc", "ABC", "123", "#+="};
+const char* const kGroupChars[] = {"abcdefghijklmnopqrstuvwxyz", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", "0123456789",
+                                   "!@#$%&*-_.+=?/:;,'\"()"};
+const char* const kEditKeys[] = {"SPACE", "DEL", "OK"};
+constexpr int kGroups = 5;
+constexpr int kGroupStart[kGroups] = {0, 26, 52, 62, 83};
+constexpr int kRingLen = 86;
+
+int groupOf(int idx) {
+    int g = 0;
+    for (int i = 0; i < kGroups; i++)
+        if (kGroupStart[i] <= idx) g = i;
+    return g;
+}
+
+// The key at ring position idx: a one-character string, or SPACE / DEL / OK.
+const char* ringKey(int idx, char* buf) {
+    const int g = groupOf(idx), k = idx - kGroupStart[g];
+    if (g == 4) return kEditKeys[k];
+    buf[0] = kGroupChars[g][k];
+    buf[1] = 0;
+    return buf;
+}
+
+// The key as drawn in the ring: SPACE shows as an open box.
+const char* ringLabel(int idx, char* buf) {
+    const char* k = ringKey(mod(idx, kRingLen), buf);
+    return std::strcmp(k, "SPACE") == 0 ? "␣" : k;
+}
+
+void barsText(int n, char* out) {
+    for (int i = 0; i < 3; i++) out[i] = i < n ? '|' : '.';
+    out[3] = 0;
+}
+
+Str sideName(radio::Side s) {
+    switch (s) {
+        case radio::Side::Mute: return Str::val_mute;
+        case radio::Side::NextPreset: return Str::val_preset;
+        case radio::Side::Back: break;
+    }
+    return Str::val_back;
+}
+
+// ---- splash: the wheel ----
+const double kTongues[5][2] = {{-0.6, 6}, {-0.15, 10}, {0.3, 12}, {0.75, 10}, {1.2, 7}};
+constexpr int kWheelCy = 16;
+constexpr int kRollFrom = -16, kRollTo = 17;  // cx as the wheel rolls in
+// The box around the centre that can be on screen: the tread reaches 14 px to the right; the flames reach further
+// left than the screen edge is from the centre at rest.
+constexpr int kWheelLeft = -kRollTo, kWheelRight = 14;
+constexpr double kHeatRolling = 1.15, kHeatIdle = 0.9;
+
+// The wheel's pixels by offset from its centre. A pixel's distance and angle depend only on its offset (cx is a
+// whole pixel, cy is fixed), so they are computed once, with the same double maths as before, and each frame only
+// turns the wheel and flickers the flames.
+struct WheelGeometry {
+    struct Solid {
+        int8_t dx, dy;  // rim, always on
+    };
+    struct Turning {
+        int8_t dx, dy;
+        bool window;  // rim window ring (5 sectors), else tread (16 notches)
+        double th;
+    };
+    struct Flame {
+        int8_t dx, dy;
+        uint8_t tongue;
+        double over;  // distance past the flame root (r - 14.5)
+        double w;     // taper of the tongue at this angle, > 0
+    };
+    std::vector<Solid> solid;
+    std::vector<Turning> turning;
+    std::vector<Flame> flame;
+};
+WheelGeometry* s_wheel = nullptr;
+
+void buildWheel(WheelGeometry& g) {
+    for (int dy = -kWheelCy; dy < gfx::H - kWheelCy; dy++)
+        for (int dx = kWheelLeft; dx <= kWheelRight; dx++) {
+            const double r = std::hypot(dx, dy), th = std::atan2(dy, dx);
+            const int8_t x = static_cast<int8_t>(dx), y = static_cast<int8_t>(dy);
+            if (r <= 10.6) {
+                if (r < 1.3) continue;  // hub hole
+                if (r >= 3.4 && r <= 8.4)
+                    g.turning.push_back({x, y, true, th});
+                else
+                    g.solid.push_back({x, y});
+            } else if (r >= 12 && r <= 13.3) {
+                g.turning.push_back({x, y, false, th});
+            } else if (r >= 14.5) {
+                double d = th - kPi;
+                d = std::atan2(std::sin(d), std::cos(d));
+                d -= 0.35 * (r - 14.5) / 10;
+                for (int k = 0; k < 5; k++) {
+                    const double w = 1 - std::fabs(d - kTongues[k][0]) / 0.3;
+                    // A tongue is never longer than at the rolling heat with the flicker at its maximum of 1, so a
+                    // pixel beyond that is never on.
+                    if (w > 0 && r - 14.5 < kTongues[k][1] * kHeatRolling * w)
+                        g.flame.push_back({x, y, static_cast<uint8_t>(k), r - 14.5, w});
+                }
+            }
+        }
+    g.solid.shrink_to_fit();
+    g.turning.shrink_to_fit();
+    g.flame.shrink_to_fit();
+}
+
+void releaseWheel() {
+    delete s_wheel;
+    s_wheel = nullptr;
+}
+
+// Fraction of the way through the pixel's sector of the turning wheel.
+double sectorFrac(double th, double phi, int sectors) {
+    return std::fmod(std::fmod((th - phi) / (2 * kPi) * sectors, 1.0) + 1, 1.0);
+}
+
+void wheelLogo(Frame& f, int cx, double phi, double t, double heat) {
+    prepareSplash();
+    double len[5];  // tongue length at the root for this heat and flicker
+    for (int k = 0; k < 5; k++)
+        len[k] = kTongues[k][1] * heat * (0.72 + 0.28 * std::sin(t * 0.013 * (1 + 0.37 * k) + k * 1.7));
+    const auto visible = [&](int dx) { return cx + dx >= 0 && cx + dx < gfx::W; };
+    for (const auto& p : s_wheel->solid)
+        if (visible(p.dx)) f.px(cx + p.dx, kWheelCy + p.dy, 1);
+    for (const auto& p : s_wheel->turning) {
+        if (!visible(p.dx)) continue;
+        const double fr = sectorFrac(p.th, phi, p.window ? 5 : 16);
+        if (p.window ? !(fr > 0.18 && fr < 0.82) : fr >= 0.2) f.px(cx + p.dx, kWheelCy + p.dy, 1);
+    }
+    for (const auto& p : s_wheel->flame)
+        if (visible(p.dx) && p.over < len[p.tongue] * p.w) f.px(cx + p.dx, kWheelCy + p.dy, 1);
+}
+
+}  // namespace
+
+void prepareSplash() {
+    if (s_wheel) return;
+    s_wheel = new WheelGeometry;
+    buildWheel(*s_wheel);
+}
+
+// ---- state transitions ----
+
+void Ui::begin(uint32_t now) {
+    view_ = View::Splash;
+    splashStart_ = now;
+    lastInput_ = now;
+    depth_ = 0;
+}
+
+void Ui::endSplash(Output& out) {
+    releaseWheel();
+    goHome();
+    out.push(Cmd::SplashEnd);
+}
+
+void Ui::goHome() {
+    view_ = View::Home;
+    depth_ = 0;
+}
+
+void Ui::popTo() {
+    if (depth_ == 0) return goHome();
+    list_ = stack_[--depth_];
+    view_ = View::List;
+}
+
+void Ui::toast(const char* text, uint32_t now) {
+    copy(toast_, sizeof toast_, text);
+    toastUntil_ = now + kToastMs;
+}
+
+void Ui::confirmInstall(uint32_t now) {
+    view_ = View::Confirm;
+    depth_ = 0;
+    confirmStart_ = now;
+}
+
+void Ui::message(const char* text) {
+    copy(message_, sizeof message_, text);
+    view_ = View::Message;
+    depth_ = 0;
+}
+
+void Ui::build(ListId id, const State& s, const Status& st) {
+    count_ = 0;
+    gutterCount_ = 0;
+    cur_ = 0;
+    auto add = [&](const char* t, const char* r, Act act, int arg = 0, const char* mid = "") {
+        if (count_ >= kMaxItems) return;
+        Item& it = items_[count_++];
+        copy(it.t, sizeof it.t, t);
+        copy(it.r, sizeof it.r, r);
+        copy(it.mid, sizeof it.mid, mid);
+        it.act = act;
+        it.arg = arg;
+    };
+    char buf[24];
+    auto tr = [&](Str k) { return i18n::tr(s.lang, k); };
+    switch (id) {
+        case ListId::Main: {
+            add(tr(Str::band), radio::bandLabel(s.hz, s.mode), Act::Go, static_cast<int>(ListId::Bands));
+            add(tr(Str::mode), radio::modeName(s.mode), Act::Go, static_cast<int>(ListId::Modes));
+            add(tr(Str::step), radio::currentStep(s).label, Act::Go, static_cast<int>(ListId::Steps));
+            add(tr(Str::bandwidth), radio::currentBandwidth(s), Act::Go, static_cast<int>(ListId::Bandwidth));
+            snprintf(buf, sizeof buf, "%d", s.volume);
+            add(tr(Str::volume), s.muted ? tr(Str::val_mute) : buf, Act::Adjust, static_cast<int>(AdjustId::Volume));
+            add(tr(Str::seek), "", Act::Go, static_cast<int>(ListId::Seek));
+            gutter_[0] = {gfx::Icon::Presets, Act::Go, static_cast<int>(ListId::Presets)};
+            gutter_[1] = {s.muted ? gfx::Icon::Muted : gfx::Icon::Volume, Act::ToggleMute, 0};
+            gutter_[2] = {gfx::Icon::Settings, Act::Go, static_cast<int>(ListId::Settings)};
+            gutterCount_ = 3;
+            break;
+        }
+        case ListId::Bands: {
+            const int b = radio::bandIndex(s.hz, s.mode);
+            cur_ = b > 0 ? b : 0;
+            for (int i = 0; i < radio::kBandCount; i++) {
+                const radio::Band& band = radio::kBands[i];
+                char range[16];
+                radio::rangeText(band, range, sizeof range);
+                const bool ssb = band.mode == Mode::LSB || band.mode == Mode::USB;
+                add(band.name, ssb ? radio::modeName(band.mode) : "", Act::Band, i, range);
+            }
+            break;
+        }
+        case ListId::Modes:
+            if (radio::isFm(s.mode)) {
+                add("FM", tr(Str::only_fm), Act::None);
+                break;
+            }
+            add("AM", "", Act::Mode, static_cast<int>(Mode::AM));
+            if (st.ssb) {
+                add("LSB", tr(Str::lower_ssb), Act::Mode, static_cast<int>(Mode::LSB));
+                add("USB", tr(Str::upper_ssb), Act::Mode, static_cast<int>(Mode::USB));
+            }
+            for (int i = 0; i < count_; i++)
+                if (items_[i].arg == static_cast<int>(s.mode)) cur_ = i;
+            break;
+        case ListId::Presets: {
+            for (int i = 0; i < s.presetCount; i++) {
+                const radio::Preset& p = s.presets[i];
+                char t[24], r[16];
+                snprintf(t, sizeof t, "%d %s", i + 1, p.name);
+                radio::presetFreqText(p, r, sizeof r);
+                add(t, r, Act::Preset, i);
+            }
+            for (int i = 0; i < s.presetCount; i++)
+                if (s.presets[i].hz == s.hz && s.presets[i].mode == s.mode) {
+                    cur_ = i;
+                    break;
+                }
+            break;
+        }
+        case ListId::Steps: {
+            int n;
+            const radio::Step* stp = radio::steps(radio::family(s.mode), &n);
+            for (int i = 0; i < n; i++) add(stp[i].label, "", Act::Step, i);
+            cur_ = s.stepIdx[radio::family(s.mode)];
+            break;
+        }
+        case ListId::Bandwidth: {
+            int n;
+            const char* const* bw = radio::bandwidths(radio::family(s.mode), &n);
+            for (int i = 0; i < n; i++) add(bw[i], "", Act::Bandwidth, i);
+            cur_ = s.bwIdx[radio::family(s.mode)];
+            break;
+        }
+        case ListId::Seek:
+            add(tr(Str::seek_up), "", Act::Seek, 1);
+            add(tr(Str::seek_down), "", Act::Seek, -1);
+            break;
+        case ListId::Wifi:
+            add(tr(Str::status), st.joined ? "radio.local" : tr(Str::not_joined), Act::Info, static_cast<int>(InfoId::Wifi));
+            for (int i = 0; i < st.netCount; i++) {
+                char bars[4], r[16];
+                barsText(st.nets[i].bars, bars);
+                if (st.joined && std::strcmp(st.nets[i].ssid, st.ssid) == 0)
+                    snprintf(r, sizeof r, "✓ %s", bars);
+                else
+                    snprintf(r, sizeof r, "%s", bars);
+                add(st.nets[i].ssid, r, Act::Join, i);
+            }
+            break;
+        case ListId::Settings:
+            add(tr(Str::wifi), st.joined ? st.ssid : tr(Str::not_joined), Act::Go, static_cast<int>(ListId::Wifi));
+            add(tr(Str::agc), s.agc ? tr(Str::on) : tr(Str::off), Act::ToggleAgc);
+            snprintf(buf, sizeof buf, "%d", s.contrast);
+            add(tr(Str::contrast), buf, Act::Adjust, static_cast<int>(AdjustId::Contrast));
+            snprintf(buf, sizeof buf, "%d", s.light);
+            add(tr(Str::light), s.light ? buf : tr(Str::off), Act::Adjust, static_cast<int>(AdjustId::Light));
+            add(tr(Str::side_button), tr(sideName(s.side)), Act::Go, static_cast<int>(ListId::Side));
+            add(tr(Str::language), i18n::kLangName[s.lang < i18n::kLangCount ? s.lang : 0], Act::Go,
+                static_cast<int>(ListId::Language));
+            add(tr(Str::about), "", Act::Info, static_cast<int>(InfoId::About));
+            break;
+        case ListId::Side:
+            add(tr(Str::side_mute), "", Act::Side, static_cast<int>(radio::Side::Mute));
+            add(tr(Str::side_next), "", Act::Side, static_cast<int>(radio::Side::NextPreset));
+            add(tr(Str::side_back), "", Act::Side, static_cast<int>(radio::Side::Back));
+            cur_ = static_cast<int>(s.side);
+            break;
+        case ListId::Language:
+            for (int i = 0; i < i18n::kLangCount; i++) add(i18n::kLangName[i], "", Act::Language, i);
+            cur_ = s.lang < i18n::kLangCount ? s.lang : 0;
+            break;
+    }
+}
+
+void Ui::openList(ListId id, bool push, const State& s, const Status& st) {
+    if (push && depth_ < 4) stack_[depth_++] = list_;
+    build(id, s, st);
+    const int cur = count_ ? cur_ : -1;
+    list_ = {id, cur, clampi(cur - 1 < count_ - 4 ? cur - 1 : count_ - 4, 0, 1 << 20)};
+    view_ = View::List;
+}
+
+void Ui::scrollTo() {
+    ListState& l = list_;
+    if (l.cursor == -1) {
+        l.top = 0;
+        return;
+    }
+    if (l.cursor < -1) return;
+    if (l.cursor < l.top) l.top = l.cursor;
+    if (l.cursor > l.top + 3) l.top = l.cursor - 3;
+    const int maxTop = count_ - 4 > 0 ? count_ - 4 : 0;
+    l.top = clampi(l.top, 0, maxTop);
+}
+
+int Ui::adjustValue(const State& s) const {
+    switch (adjust_) {
+        case AdjustId::Volume: return s.volume;
+        case AdjustId::Contrast: return s.contrast;
+        case AdjustId::Light: return s.light;
+    }
+    return 0;
+}
+
+void Ui::adjustDone() {
+    if (adjust_ == AdjustId::Volume) return goHome();
+    popTo();
+}
+
+void Ui::stopSeek(const Status& st, Output& out) {
+    if (st.seeking) out.push(Cmd::SeekStop);
+}
+
+void Ui::startSeek(int dir, const State& s, Output& out, uint32_t now) {
+    goHome();
+    if (radio::family(s.mode) == radio::kFamSSB) return toast(i18n::tr(s.lang, Str::toast_no_seek), now);
+    out.push(Cmd::Seek, dir);
+}
+
+void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
+    Act act;
+    int arg;
+    if (list_.cursor < -1) {
+        const Gutter& g = gutter_[-list_.cursor - 2];
+        act = g.act;
+        arg = g.arg;
+    } else {
+        const Item& it = items_[list_.cursor];
+        act = it.act;
+        arg = it.arg;
+    }
+    switch (act) {
+        case Act::None: return;
+        case Act::Go:
+            if (static_cast<ListId>(arg) == ListId::Wifi) out.push(Cmd::Scan);
+            return openList(static_cast<ListId>(arg), true, s, st);
+        case Act::Adjust:
+            if (depth_ < 4) stack_[depth_++] = list_;
+            adjust_ = static_cast<AdjustId>(arg);
+            view_ = View::Adjust;
+            return;
+        case Act::Info:
+            if (depth_ < 4) stack_[depth_++] = list_;
+            info_ = static_cast<InfoId>(arg);
+            view_ = View::Info;
+            return;
+        case Act::ToggleAgc: return out.push(Cmd::Agc, !s.agc);
+        case Act::ToggleMute: return out.push(Cmd::Mute, !s.muted);
+        case Act::Band: out.push(Cmd::Band, arg); return goHome();
+        case Act::Mode: out.push(Cmd::SetMode, arg); return goHome();
+        case Act::Preset:
+            favIdx_ = arg;
+            out.push(Cmd::TunePreset, arg);
+            return goHome();
+        case Act::Step: out.push(Cmd::Step, arg); return goHome();
+        case Act::Bandwidth: out.push(Cmd::Bandwidth, arg); return goHome();
+        case Act::Seek: return startSeek(arg, s, out, now);
+        case Act::Join:
+            if (depth_ < 4) stack_[depth_++] = list_;
+            copy(entrySsid_, sizeof entrySsid_, st.nets[arg].ssid);
+            entry_[0] = 0;
+            entryIdx_ = 0;
+            view_ = View::Entry;
+            return;
+        case Act::Side: out.push(Cmd::SideAction, arg); return popTo();
+        case Act::Language: out.push(Cmd::Language, arg); return popTo();
+    }
+}
+
+void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, Output& out) {
+    if (view_ == View::Message) return;
+    lastInput_ = now;
+    if (view_ == View::Splash) return endSplash(out);
+    stopSeek(st, out);
+    if (view_ == View::List) build(list_.id, s, st);
+    const int d = e.n;
+
+    switch (e.type) {
+        case EventType::Turn:
+            switch (view_) {
+                case View::Home:
+                    out.push(Cmd::Tune, radio::clampHz(s.hz + d * radio::currentStep(s).hz, s.mode));
+                    break;
+                case View::List: {
+                    const int len = count_ + 1 + gutterCount_;
+                    // Ring order: entries, then the gutter from the bottom slot up to Back.
+                    auto at = [&](int i) { return i < count_ ? i : -(len - i); };
+                    int i = -1;
+                    for (int k = 0; k < len; k++)
+                        if (at(k) == list_.cursor) i = k;
+                    list_.cursor = at(mod(i + d, len));
+                    scrollTo();
+                    break;
+                }
+                case View::Adjust: {
+                    const int lo = adjust_ == AdjustId::Contrast ? radio::kContrastMin : 0;
+                    const int hi = adjust_ == AdjustId::Volume     ? radio::kVolumeMax
+                                   : adjust_ == AdjustId::Contrast ? radio::kContrastMax
+                                                                   : radio::kLightMax;
+                    const int v = clampi(adjustValue(s) + d, lo, hi);
+                    const Cmd c = adjust_ == AdjustId::Volume     ? Cmd::Volume
+                                  : adjust_ == AdjustId::Contrast ? Cmd::Contrast
+                                                                  : Cmd::Light;
+                    out.push(c, v);
+                    break;
+                }
+                case View::Entry: entryIdx_ = mod(entryIdx_ + d, kRingLen); break;
+                default: break;
+            }
+            return;
+
+        case EventType::Press:
+            switch (view_) {
+                case View::Home: return openList(ListId::Main, false, s, st);
+                case View::Info: return popTo();
+                case View::Adjust: return adjustDone();
+                case View::Confirm:
+                    out.push(Cmd::Install);
+                    return message(i18n::tr(s.lang, Str::installing));
+                case View::Entry: {
+                    char buf[2];
+                    const char* k = ringKey(entryIdx_, buf);
+                    const size_t len = std::strlen(entry_);
+                    if (std::strcmp(k, "OK") == 0) {
+                        copy(joinSsid_, sizeof joinSsid_, entrySsid_);
+                        copy(joinPwd_, sizeof joinPwd_, entry_);
+                        out.push(Cmd::Join);
+                        char t[96];
+                        snprintf(t, sizeof t, i18n::tr(s.lang, Str::toast_joining), entrySsid_);
+                        toast(t, now);
+                        return goHome();
+                    }
+                    if (std::strcmp(k, "DEL") == 0) {
+                        if (len) entry_[len - 1] = 0;
+                        return;
+                    }
+                    if (len < kPasswordMax) {
+                        entry_[len] = std::strcmp(k, "SPACE") == 0 ? ' ' : k[0];
+                        entry_[len + 1] = 0;
+                    }
+                    return;
+                }
+                case View::List:
+                    if (list_.cursor == -1) return popTo();
+                    return activate(s, st, out, now);
+                default: return;
+            }
+
+        case EventType::LongPress:
+            if (view_ == View::Home) {
+                if (s.presetCount >= radio::kMaxPresets) return toast(i18n::tr(s.lang, Str::toast_full), now);
+                out.push(Cmd::SavePreset);
+                char t[96];
+                snprintf(t, sizeof t, i18n::tr(s.lang, Str::toast_saved), s.presetCount + 1);
+                return toast(t, now);
+            }
+            if (view_ == View::Confirm) {
+                out.push(Cmd::CancelInstall);
+                toast(i18n::tr(s.lang, Str::toast_cancelled), now);
+            }
+            return goHome();
+
+        case EventType::HoldTurn:
+            switch (view_) {
+                case View::Home:
+                    out.push(Cmd::Volume, clampi(s.volume + d, 0, radio::kVolumeMax));
+                    volUntil_ = now + kToastMs;
+                    break;
+                case View::List: {
+                    const int c = (list_.cursor > 0 ? list_.cursor : 0) + d * 4;
+                    list_.cursor = c > count_ - 1 ? count_ - 1 : c < 0 ? 0 : c;
+                    scrollTo();
+                    break;
+                }
+                case View::Entry: {
+                    const int g = groupOf(entryIdx_);
+                    entryIdx_ = kGroupStart[mod(g + d, kGroups)];
+                    break;
+                }
+                default: break;
+            }
+            return;
+
+        case EventType::Side:
+            if (view_ == View::Confirm) {
+                out.push(Cmd::CancelInstall);
+                toast(i18n::tr(s.lang, Str::toast_cancelled), now);
+                return goHome();
+            }
+            switch (s.side) {
+                case radio::Side::Mute:
+                    out.push(Cmd::Mute, !s.muted);
+                    return toast(i18n::tr(s.lang, s.muted ? Str::toast_sound : Str::toast_muted), now);
+                case radio::Side::NextPreset: {
+                    if (!s.presetCount) return toast(i18n::tr(s.lang, Str::toast_none), now);
+                    favIdx_ = (favIdx_ + 1) % s.presetCount;
+                    out.push(Cmd::TunePreset, favIdx_);
+                    goHome();
+                    char t[96];
+                    snprintf(t, sizeof t, i18n::tr(s.lang, Str::toast_preset), favIdx_ + 1, s.presets[favIdx_].name);
+                    return toast(t, now);
+                }
+                case radio::Side::Back:
+                    if (view_ == View::List || view_ == View::Info || view_ == View::Entry) return popTo();
+                    if (view_ == View::Adjust) return adjustDone();
+                    return;
+            }
+            return;
+    }
+}
+
+void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
+    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out);
+    if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info) && now - lastInput_ > kMenuTimeoutMs)
+        goHome();
+    if (view_ == View::Confirm && now - confirmStart_ > kConfirmTimeoutMs) {
+        out.push(Cmd::CancelInstall);
+        toast(i18n::tr(s.lang, Str::toast_cancelled), now);
+        goHome();
+    }
+}
+
+// ---- drawing ----
+
+void Ui::render(Frame& f, uint32_t now, const State& s, const Status& st) {
+    f.clear();
+    switch (view_) {
+        case View::Splash: return drawSplash(f, now - splashStart_);
+        case View::Home: return drawHome(f, now, s, st);
+        case View::List: return drawList(f, s, st);
+        case View::Adjust: return drawAdjust(f, s);
+        case View::Info: return drawInfo(f, s, st);
+        case View::Entry: return drawEntry(f, s);
+        case View::Confirm: return drawConfirm(f, s);
+        case View::Message: return drawMessage(f);
+    }
+}
+
+void Ui::drawSplash(Frame& f, uint32_t tms) {
+    const double t = tms;
+    const double k = t / 900 < 1 ? t / 900 : 1, ease = 1 - std::pow(1 - k, 3);
+    const int cx = jsRoundI(kRollFrom + ease * (kRollTo - kRollFrom));
+    const double phi = (cx - kRollFrom) / 13.0 + (t - 900 > 0 ? t - 900 : 0) * 0.004;
+    wheelLogo(f, cx, phi, t, k < 1 ? kHeatRolling : kHeatIdle);
+    if (t > 800) {
+        const int n = clampi(static_cast<int>(std::floor((t - 800) / 45)), 0, 10);
+        char word[11];
+        std::memcpy(word, "HOVERBOARD", n);
+        word[n] = 0;
+        gfx::text(f, 40, 1, word);
+    }
+    if (t > 1250) {
+        gfx::text2x(f, 40, 10, "HAVOC");
+        const int reveal = 40 + clampi(static_cast<int>(std::floor((t - 1250) / 6)), 0, 52);
+        f.fill(reveal, 10, 128 - reveal, 13, 0);
+    }
+    if (t > 1700) gfx::textR(f, 128, 24, "radio");
+}
+
+void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
+    char fs[16];
+    const char* unit;
+    radio::freqText(s, fs, sizeof fs, &unit);
+    const bool vol = now < volUntil_, toasting = toast_[0] && now < toastUntil_;
+    const char* band = radio::bandLabel(s.hz, s.mode);
+    if (vol) {
+        gfx::icon(f, 0, 0, gfx::Icon::Volume);
+        const int w = jsRoundI(s.volume / 63.0 * 90);
+        f.fill(10, 2, 90, 4, 0);
+        for (int i = 10; i < 100; i += 2) f.px(i, 4, 1);
+        f.fill(10, 1, w, 5, 1);
+        char v[8];
+        snprintf(v, sizeof v, "%d", s.volume);
+        gfx::textR(f, 128, 0, v);
+    } else if (toasting) {
+        f.fill(0, 0, 128, 8, 1);
+        gfx::text(f, 1, 0, toast_, 0);
+    } else if (st.seeking) {
+        char t[64];
+        snprintf(t, sizeof t, "%s  %s %s", band, i18n::tr(s.lang, Str::seek), st.seekDir > 0 ? "\u25b6" : "\u25c0");
+        gfx::text(f, 0, 0, t);
+    } else {
+        int x = gfx::text(f, 0, 0, band);
+        x = gfx::text(f, x + 5, 0, radio::modeName(s.mode));
+        char t[48];
+        snprintf(t, sizeof t, "%s %s", i18n::tr(s.lang, Str::home_step), radio::currentStep(s).label);
+        // The step yields to the Mute flag when they would overlap.
+        if (!s.muted || x + 5 + gfx::textW(t) < 80) gfx::text(f, x + 5, 0, t);
+        if (s.muted) {
+            const char* flag = i18n::tr(s.lang, Str::home_mute);
+            const int fw = gfx::textW(flag) + 3;
+            f.fill(80, 0, fw > 22 ? fw : 22, 8, 1);
+            gfx::text(f, 82, 0, flag, 0);
+        }
+    }
+    if (!vol && !toasting) {
+        for (int i = 0; i < 5; i++) {
+            const int h = 2 + i + (i > 2 ? 1 : 0), x = 108 + i * 4;
+            if (i < st.bars)
+                f.fill(x, 7 - h, 3, h, 1);
+            else
+                f.px(x + 1, 6, 1);
+        }
+    }
+    const int b = radio::bandIndex(s.hz, s.mode);
+    if (b >= 0) {
+        const radio::Band& bd = radio::kBands[b];
+        for (int i = 0; i < 128; i += 4) f.px(i, 11, 1);
+        const int p = jsRoundI((s.hz / 1000.0 - bd.lo) / (bd.hi - bd.lo) * 125);
+        f.fill(p, 9, 3, 5, 1);
+    }
+    gfx::big(f, 114 - gfx::bigW(fs), 14, fs);
+    gfx::textR(f, 128, 24, unit);
+}
+
+void Ui::drawGutter(Frame& f, int cursor, bool withGutter, const State&) {
+    if (cursor == -1) {
+        f.fill(0, 0, 8, 8, 1);
+        gfx::text(f, 2, 0, "◀", 0);
+    } else {
+        gfx::text(f, 2, 0, "◀", 1);
+    }
+    if (!withGutter) return;
+    for (int k = 0; k < gutterCount_; k++) {
+        const int y = (k + 1) * 8;
+        const bool sel = cursor == -(k + 2);
+        if (sel) f.fill(0, y, 8, 8, 1);
+        gfx::icon(f, 0, y, gutter_[k].icon, sel ? 0 : 1);
+    }
+}
+
+void Ui::drawList(Frame& f, const State& s, const Status& st) {
+    build(list_.id, s, st);
+    const int n = count_;
+    drawGutter(f, list_.cursor, true, s);
+    for (int r = 0; r < 4; r++) {
+        const int i = list_.top + r;
+        if (i >= n) break;
+        const bool sel = i == list_.cursor;
+        const int y = r * 8, c = sel ? 0 : 1;
+        const Item& it = items_[i];
+        if (sel) f.fill(9, y, 117, 8, 1);
+        gfx::text(f, 11, y, it.t, c);
+        if (it.mid[0]) gfx::text(f, 32, y, it.mid, c);
+        if (it.r[0]) gfx::textR(f, 124, y, it.r, c);
+    }
+    if (n > 4) {
+        for (int y = 0; y < 32; y += 2) f.px(127, y, 1);
+        const int th = jsRoundI(32.0 * 4 / n) > 3 ? jsRoundI(32.0 * 4 / n) : 3;
+        const int ty = jsRoundI(static_cast<double>(32 - th) * list_.top / (n - 4));
+        f.fill(127, ty, 1, th, 1);
+    }
+}
+
+void Ui::drawAdjust(Frame& f, const State& s) {
+    const char* title = i18n::tr(s.lang, adjust_ == AdjustId::Volume     ? Str::volume
+                                         : adjust_ == AdjustId::Contrast ? Str::contrast
+                                                                         : Str::light);
+    const int lo = adjust_ == AdjustId::Contrast ? radio::kContrastMin : 0;
+    const int hi = adjust_ == AdjustId::Volume     ? radio::kVolumeMax
+                   : adjust_ == AdjustId::Contrast ? radio::kContrastMax
+                                                   : radio::kLightMax;
+    drawGutter(f, 0, false, s);
+    gfx::text(f, 10, 0, title);
+    const int v = adjustValue(s), w = jsRoundI(static_cast<double>(v - lo) / (hi - lo) * 106);
+    for (int i = 10; i < 116; i += 2) f.px(i, 17, 1);
+    f.fill(10, 13, w, 9, 1);
+    char t[12];
+    snprintf(t, sizeof t, "%d/%d", v, hi);
+    gfx::textR(f, 128, 24, t);
+}
+
+void Ui::drawInfo(Frame& f, const State& s, const Status& st) {
+    char lines[3][96];
+    if (info_ == InfoId::Wifi) {
+        if (st.joined) {
+            snprintf(lines[0], sizeof lines[0], i18n::tr(s.lang, Str::joined_s), st.ssid);
+            snprintf(lines[1], sizeof lines[1], "radio.local");
+            snprintf(lines[2], sizeof lines[2], "%s", st.ip);
+        } else {
+            snprintf(lines[0], sizeof lines[0], "%s", i18n::tr(s.lang, Str::not_joined_cap));
+            snprintf(lines[1], sizeof lines[1], "%s", i18n::tr(s.lang, Str::access_point));
+            snprintf(lines[2], sizeof lines[2], "Havoc-Radio");
+        }
+    } else {
+        snprintf(lines[0], sizeof lines[0], "Havoc Radio %s", st.version);
+        snprintf(lines[1], sizeof lines[1], "IP %s", st.ip);
+        snprintf(lines[2], sizeof lines[2], i18n::tr(s.lang, Str::battery_d), st.battery);
+    }
+    drawGutter(f, -1, false, s);
+    for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
+}
+
+void Ui::drawEntry(Frame& f, const State& s) {
+    char t[96], buf[2];
+    snprintf(t, sizeof t, i18n::tr(s.lang, Str::password_for), entrySsid_);
+    gfx::text(f, 0, 0, t);
+    const int g = groupOf(entryIdx_);
+    gfx::textR(f, 128, 0, g == 4 ? i18n::tr(s.lang, Str::group_edit) : kGroupName[g]);
+    const char* v = entry_;
+    while (gfx::textW(v) > 118) v++;
+    const int ex = gfx::text(f, 1, 8, v);
+    f.fill(ex + (*v ? 1 : 0), 15, 4, 1, 1);
+    for (int x = 0; x < 128; x += 2) f.px(x, 17, 1);
+    auto cw = [](const char* l) { return gfx::textW(l) + 5; };
+    const int mid = 64;
+    const char* sel = ringLabel(entryIdx_, buf);
+    const int sw = cw(sel);
+    f.fill(mid - (sw >> 1), 21, sw, 10, 1);
+    gfx::text(f, mid - (sw >> 1) + 3, 22, sel, 0);
+    int x = mid + (sw >> 1) + 1;
+    for (int i = 1; x < 128; i++) {
+        const char* l = ringLabel(entryIdx_ + i, buf);
+        gfx::text(f, x + 2, 22, l);
+        x += cw(l);
+    }
+    x = mid - (sw >> 1) - 1;
+    for (int i = 1; x > 0; i++) {
+        const char* l = ringLabel(entryIdx_ - i, buf);
+        x -= cw(l);
+        gfx::text(f, x + 3, 22, l);
+    }
+}
+
+void Ui::drawConfirm(Frame& f, const State& s) {
+    const char* const lines[] = {i18n::tr(s.lang, Str::confirm_title), i18n::tr(s.lang, Str::confirm_press),
+                                 i18n::tr(s.lang, Str::confirm_long)};
+    for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
+}
+
+void Ui::drawMessage(Frame& f) { gfx::text(f, (gfx::W - gfx::textW(message_)) >> 1, 12, message_); }
+
+}  // namespace ui

@@ -1,0 +1,9 @@
+build/
+sdkconfig
+sdkconfig.old
+third_party/
+*.pyc
+.cache/
+managed_components/
+TODO.md
+SPEC.md

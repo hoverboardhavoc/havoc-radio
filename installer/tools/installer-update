@@ -1,0 +1,178 @@
+#!/usr/bin/env python3
+"""Update the Havoc Radio Installer's own firmware over WiFi.
+
+Posts the installer's app image (installer/build/installer.bin from `make installer`, not the merged image) to the
+installer, which writes it to its other app slot and restarts into it, then follows /api/status until the new
+firmware runs and has confirmed itself, or the installer came back on the previous one (rolled back)
+(installer/SPEC.md, "Updating the installer itself"):
+
+    installer-update [--host 192.168.4.1] [installer/build/installer.bin]
+
+Standard library only.
+"""
+
+import argparse
+import http.client
+import json
+import os
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_IMAGE = os.path.join(os.path.dirname(HERE), "build", "installer.bin")
+
+# Whole uploads to try when the connection fails.
+UPLOAD_ATTEMPTS = 3
+# Per socket operation of the upload; the installer erases and writes as the body arrives.
+TIMEOUT = 30.0
+POLL_TIMEOUT = 3.0
+POLL_INTERVAL = 1.0
+# After a dropped upload, how long the installer may take to give it up (its receive timeout is 20 s).
+IDLE_WAIT = 60.0
+# From the accepted upload to the confirmed new firmware, which takes 30 s of answers after its start.
+RESTART_WAIT = 120.0
+# The installer restarted when its clock ("now", ms since its start) is this far behind where it would be had it kept
+# running.
+CLOCK_SLACK_MS = 2000
+
+
+class UpdateError(Exception):
+    pass
+
+
+def log(msg):
+    print(msg, flush=True)
+
+
+def why(err):
+    return str(err) or type(err).__name__
+
+
+def request(host, method, path, body=None, timeout=POLL_TIMEOUT):
+    """(HTTP status, JSON answer). Raises OSError or http.client.HTTPException when the connection fails."""
+    conn = http.client.HTTPConnection(host, timeout=timeout)
+    try:
+        headers = {"Content-Type": "application/octet-stream"} if body is not None else {}
+        conn.request(method, path, body=body, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read()
+    finally:
+        conn.close()
+    try:
+        doc = json.loads(raw) if raw else {}
+    except ValueError:
+        doc = {"error": raw.decode(errors="replace")}
+    return resp.status, doc
+
+
+def status(host):
+    code, doc = request(host, "GET", "/api/status")
+    if code != 200:
+        raise http.client.HTTPException(f"/api/status: HTTP {code}")
+    return doc
+
+
+class Clock:
+    """Where the installer's clock would be had it kept running since a status answer."""
+
+    def __init__(self, st):
+        self.now = st["now"]
+        self.at = time.monotonic()
+
+    def restarted(self, st):
+        return st["now"] < self.now + (time.monotonic() - self.at) * 1000 - CLOCK_SLACK_MS
+
+
+def wait_idle(host):
+    """After a dropped upload, wait until the installer has given it up."""
+    deadline = time.monotonic() + IDLE_WAIT
+    while time.monotonic() < deadline:
+        try:
+            if status(host)["installer"]["update"] is None:
+                return
+        except (OSError, http.client.HTTPException):
+            pass
+        time.sleep(POLL_INTERVAL)
+    raise UpdateError(f"the installer still runs the dropped upload after {IDLE_WAIT:.0f} s")
+
+
+def upload(host, image):
+    """Post the image and return the installer's answer. The whole upload is retried on a connection error; a refusal
+    is final."""
+    for attempt in range(1, UPLOAD_ATTEMPTS + 1):
+        try:
+            code, doc = request(host, "POST", "/api/installer/update", image, TIMEOUT)
+        except (OSError, http.client.HTTPException) as e:
+            if attempt == UPLOAD_ATTEMPTS:
+                raise UpdateError(f"upload failed {UPLOAD_ATTEMPTS} times, last: {why(e)}")
+            log(f"upload: {why(e)}; sending it again ({attempt + 1} of {UPLOAD_ATTEMPTS})")
+            wait_idle(host)
+            continue
+        if code != 200 or not doc.get("ok"):
+            raise UpdateError(f"refused (HTTP {code}): {doc.get('error', doc)}")
+        return doc
+
+
+def wait_new(host, clock, answer):
+    """Poll until the installer has restarted and confirmed the new firmware. Returns its status; raises UpdateError
+    when it came back on another firmware."""
+    restarted = False
+    said = False
+    deadline = time.monotonic() + RESTART_WAIT
+    while time.monotonic() < deadline:
+        time.sleep(POLL_INTERVAL)
+        try:
+            st = status(host)
+        except (OSError, http.client.HTTPException):
+            continue
+        restarted = restarted or clock.restarted(st)
+        if not restarted:
+            continue
+        inst = st["installer"]
+        if (inst["version"], inst["slot"]) != (answer["version"], answer["slot"]):
+            raise UpdateError(f"the installer came back on {inst['version']} from {inst['slot']}: the update to "
+                              f"{answer['version']} was rolled back")
+        if inst["confirmed"]:
+            return inst
+        if not said:
+            log(f"installer {inst['version']} runs from {inst['slot']}; it confirms itself after 30 s of answers")
+            said = True
+    raise UpdateError(f"no confirmed answer from installer {answer['version']} within {RESTART_WAIT:.0f} s")
+
+
+def update(host, path):
+    with open(path, "rb") as f:
+        image = f.read()
+    try:
+        st = status(host)
+    except (OSError, http.client.HTTPException) as e:
+        raise UpdateError(f"no answer from the installer at {host}: {why(e)}")
+    clock = Clock(st)
+    inst = st["installer"]
+    log(f"installer {inst['version']} runs from {inst['slot']} at {host}; sending {os.path.basename(path)}, "
+        f"{len(image)} bytes")
+    t0 = time.monotonic()
+    answer = upload(host, image)
+    log(f"accepted in {time.monotonic() - t0:.1f} s: installer {answer['version']} written to {answer['slot']}; "
+        "restarting")
+    inst = wait_new(host, clock, answer)
+    log(f"installer {inst['version']} runs from {inst['slot']}, confirmed")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--host", default="192.168.4.1",
+                    help="installer host name or IP address (192.168.4.1 on its hotspot)")
+    ap.add_argument("image", nargs="?", default=DEFAULT_IMAGE,
+                    help="the installer's app image (default: installer/build/installer.bin)")
+    args = ap.parse_args(argv)
+    try:
+        update(args.host, args.image)
+    except (UpdateError, OSError) as e:
+        log(f"installer-update: {e}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
