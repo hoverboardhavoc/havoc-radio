@@ -53,7 +53,7 @@ static void test_devices(void)
     CHECK(d->name_count == 2 && strcmp(d->names[0], "pool.ntp.org") == 0);
 
     // The last 8 distinct names are kept.
-    char name[16];
+    char name[24];  // room for any int, so gcc's format-truncation check passes
     for (int i = 0; i < 12; i++) {
         snprintf(name, sizeof(name), "n%d.example", i);
         rec_dns(&r, IP3, name);
