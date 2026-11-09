@@ -71,6 +71,8 @@ def venv():
     if not os.path.isdir(path):
         run(sys.executable, "-m", "venv", path)
     pip = os.path.join(path, "bin", "pip")
+    # The SDK's dependency check imports pkg_resources, which newer setuptools no longer ships.
+    run(pip, "install", "-q", "setuptools<70")
     run(pip, "install", "-q", "-r", os.path.join(TP, "ESP8266_RTOS_SDK", "requirements.txt"))
     # QuickJS runs the UI prototype headless to produce the framebuffer goldens.
     run(pip, "install", "-q", "quickjs")
