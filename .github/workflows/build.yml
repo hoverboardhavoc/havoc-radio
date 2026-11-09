@@ -20,7 +20,7 @@ jobs:
       - name: Host tools
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends gcc g++ libc6-dev cmake ninja-build nodejs python3-venv
+          apt-get install -y --no-install-recommends gcc g++ libc6-dev cmake ninja-build dnsutils nodejs python3-venv
 
       - name: ESP8266 SDK and toolchain
         run: make setup

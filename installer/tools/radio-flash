@@ -291,8 +291,12 @@ def run_job(bridge, baud, reset_after):
             job = bridge.request_once("POST", "/flash", doc)["job"]
             break
         except HTTPStatusError as e:
+            reason = e.body.get('error', e.body)
+            if e.status == 409 and reason == "stage check has not passed":
+                # The bridge restarted after the upload's check: check again, then retry.
+                raise BridgeRestarted(f"the bridge restarted before job start ({reason})")
             if e.status < 500:
-                raise FlashError(f"flash job refused: {e.body.get('error', e.body)}")
+                raise FlashError(f"flash job refused: {reason}")
             err = e
         except (OSError, http.client.HTTPException) as e:
             err = e
