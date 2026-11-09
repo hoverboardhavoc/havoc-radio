@@ -375,7 +375,7 @@ and mode names read the same in every language. Some translations use short form
 
 ### About
 
-![About: Havoc Radio 0.1, IP 192.168.0.57, Battery 87%](images/guide/settings_info.png)
+![About: Havoc Radio 2026.46.0, IP 192.168.0.57, Battery 87%](images/guide/settings_info.png)
 
 About shows the Havoc Radio version, the K-Radio's address on the network and the battery level. On its own access
 point the address is `192.168.4.1`. The battery level is read every 10 s. Press the wheel to return.

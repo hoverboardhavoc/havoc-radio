@@ -1,0 +1,74 @@
+name: Build
+
+# Builds and tests Havoc Radio and the Havoc Radio Installer on every push and pull request.
+# A tag vYYYY.WW.P (year, ISO week, patch) also publishes a release with the four binaries.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    # ESP-IDF v5.4.2 for the installer; make setup adds the ESP8266 SDK and toolchain for the radio.
+    container: espressif/idf:v5.4.2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends gcc g++ libc6-dev nodejs python3-venv
+
+      - name: ESP8266 SDK and toolchain
+        run: make setup
+
+      - name: Tests
+        run: make test
+
+      - name: Installer
+        run: make installer IDF5="$IDF_PATH"
+
+      - name: Collect the binaries
+        run: |
+          mkdir -p dist
+          cp installer/build/havoc-radio-installer.bin installer/build/installer.bin \
+             radio/build/havoc-radio.bin radio/build/havoc-radio-install.bin dist/
+          cd dist && sha256sum *.bin > SHA256SUMS && cat SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: havoc-radio
+          path: dist/
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: havoc-radio
+          path: dist
+
+      - name: Check the tag against both versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          radio=$(sed -n 's/.*kVersion = "\(.*\)";.*/\1/p' radio/main/main.cpp)
+          installer=$(tr -d '[:space:]' < installer/version.txt)
+          echo "tag $tag, radio $radio, installer $installer"
+          [ "$tag" = "$radio" ] && [ "$tag" = "$installer" ]
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          sed "s/@VERSION@/$version/g" .github/release-notes.md > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Havoc Radio $version" --notes-file notes.md

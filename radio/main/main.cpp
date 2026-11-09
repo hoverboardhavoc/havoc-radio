@@ -22,7 +22,7 @@
 
 namespace {
 
-constexpr const char* kVersion = "0.1";
+constexpr const char* kVersion = "2026.46.0";
 constexpr uint32_t kFrameMs = 33;
 constexpr uint32_t kEmptyMessageMs = 3000;
 

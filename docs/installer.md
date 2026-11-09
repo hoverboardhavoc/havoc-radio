@@ -27,13 +27,14 @@ Requirements:
 
 ## Flash the SuperMini
 
-`make installer`, run from the repository root, writes `installer/build/havoc-radio-installer.bin`.
-[build-installer.md](build-installer.md) lists what the build needs.
+Download `havoc-radio-installer.bin` from the [latest release](https://github.com/hoverboardhavoc/havoc-radio/releases/latest). It holds the installer and the
+Havoc Radio it installs. To build it instead, see [build-installer.md](build-installer.md).
 
-Connect the SuperMini over its USB-C port and flash that file at `0x0`:
+Connect the SuperMini over its USB-C port and flash the file at `0x0` with
+[esptool](https://docs.espressif.com/projects/esptool/en/latest/esp32c3/) (`pip install esptool`):
 
 ```sh
-esptool.py --chip esp32c3 -p PORT write_flash 0x0 installer/build/havoc-radio-installer.bin
+esptool.py --chip esp32c3 -p PORT write_flash 0x0 havoc-radio-installer.bin
 ```
 
 `PORT` is the SuperMini's USB serial device, for example `/dev/cu.usbmodem1101`. If esptool cannot connect, hold
@@ -185,11 +186,11 @@ connect, switch the radio off and on with the cap still fitted and rerun the com
 
 ## Updating the installer
 
-The installer updates its own firmware over WiFi, so the SuperMini can stay on any USB power supply.
-`make installer` writes the update as `installer/build/installer.bin` (the merged `havoc-radio-installer.bin` is
-only for the first flash over USB).
+The installer updates its own firmware over WiFi, so the SuperMini can stay on any USB power supply. The update
+is `installer.bin` from the [latest release](https://github.com/hoverboardhavoc/havoc-radio/releases/latest), or `installer/build/installer.bin` from a build. The merged
+`havoc-radio-installer.bin` is only for the first flash over USB.
 
-On the page, open the Installer section, press Update installer and choose `installer/build/installer.bin`. The
+On the page, open the Installer section, press Update installer and choose `installer.bin`. The
 page shows the upload, the installer's answer, the restart, and the version it came back with. From a computer on
 the installer's network:
 
@@ -205,23 +206,21 @@ firmware confirms itself once its page has answered for 30 seconds. If it does n
 restarts before then, the SuperMini goes back to the previous firmware, and the page and `installer-update` report
 the update as rolled back. The home network and the carried image stay as they are.
 
-An installer flashed before self-update existed (version 0.1) needs one more flash over USB, as in "Flash the
-SuperMini"; every later update goes over WiFi.
-
 ## After installing
 
-Updates go through Havoc Radio's own web page: Firmware, choose `radio/build/havoc-radio.bin`, Upload, then press the
-knob on the radio within 30 s to install.
+Updates go through Havoc Radio's own web page: Firmware, choose `havoc-radio.bin` from the
+[latest release](https://github.com/hoverboardhavoc/havoc-radio/releases/latest), Upload, then press the knob on the
+radio within 30 s to install.
 
-To put a newer build on the installer itself, upload `radio/build/havoc-radio-install.bin` in the page's Carried
-firmware section, or from a computer on the installer's network run:
+To put a newer Havoc Radio on the installer itself, upload `havoc-radio-install.bin` from the release in the page's
+Carried firmware section. From a computer on the installer's network, `radio-flash` uploads a build to the
+installer and installs it over UART in one step (`--host` names the installer when it is not at `192.168.4.1`):
 
 ```sh
 installer/tools/radio-flash --project-args radio/build/flash_project_args
 ```
 
-which uploads the build to the installer and installs it over UART in one step (`--host` names the
-installer when it is not at `192.168.4.1`). The installer can also join a home network, set in the page's
+The installer can also join a home network, set in the page's
 Settings section, so the page and `radio-flash` work from any computer there.
 
 ## The installer's WiFi access point

@@ -30,7 +30,7 @@ struct Sim {
         st.nets = nets;
         st.netCount = 3;
         st.battery = 87;
-        st.version = "0.1";
+        st.version = "2026.46.0";
         ui.begin(kBoot);
     }
 
