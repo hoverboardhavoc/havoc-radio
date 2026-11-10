@@ -90,15 +90,15 @@ Power the SuperMini from any USB supply within a few metres of the radio. It sta
    ![](images/stock/tree-update.png)
 
 2. The radio connects, with its MAC address on the bottom line, and about 5 seconds later shows this while it
-   downloads about 1.8 MB. The SuperMini's LED blinks fast. To follow the download on a phone, join it to `Havoc`
+   downloads about 1.8 MB, which takes about 20 seconds. The SuperMini's LED blinks fast. To follow the download on a phone, join it to `Havoc`
    and open `http://192.168.4.1`: the page's Downloads section shows the radio's MAC address and the bytes sent.
    The install runs the same without the phone.
 
    ![](images/stock/ota-updating.png)
 
 3. When the download is complete, the row says "sent every byte". The radio copies Havoc Radio into place and
-   restarts into it by itself: about 6 seconds after the download screen it shows the Havoc Radio splash, the
-   rolling wheel. Do not switch the radio off before then.
+   restarts into it by itself, then shows the Havoc Radio splash, the rolling wheel. Do not switch the radio off
+   before then.
 
 If the radio shows this instead of the download screen, the update did not run and the stock firmware is
 unchanged; check the page's Downloads section and try again:
