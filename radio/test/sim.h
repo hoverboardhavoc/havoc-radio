@@ -2,6 +2,7 @@
 // the model, and WiFi state that follows Join.
 #pragma once
 #include <cstring>
+#include <string>
 
 #include "i18n_strings.h"
 #include "radio_model.h"
@@ -14,6 +15,7 @@ struct Sim {
     ui::Ui ui;
     ui::Network nets[3] = {{"Lab", 3}, {"Telenor-5G", 2}, {"Guest", 1}};
     char ssid[33] = "Lab";
+    std::string ps, rt;
     gfx::Frame frame;
 
     Sim() {
@@ -39,6 +41,16 @@ struct Sim {
         st.ip = "192.168.4.1";
     }
 
+    // RDS as the decoder hands it to the UI.
+    void setPs(const std::string& t) {
+        ps = t;
+        st.ps = ps.c_str();
+    }
+    void setRt(const std::string& t) {
+        rt = t;
+        st.rt = rt.c_str();
+    }
+
     void setLang(const char* code) {
         for (int i = 0; i < i18n::kLangCount; i++)
             if (!std::strcmp(i18n::kLangCode[i], code)) s.lang = static_cast<uint8_t>(i);
@@ -58,7 +70,7 @@ struct Sim {
                     st.joined = true;
                     st.ip = "192.168.0.57";
                     break;
-                default: radio::apply(s, c, st.ssb); break;
+                default: radio::apply(s, c, st.ssb, radio::isFm(s.mode) ? st.ps : ""); break;
             }
         }
     }

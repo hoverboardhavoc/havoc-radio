@@ -5,6 +5,7 @@
 #include <regex>
 
 #include "i18n_strings.h"
+#include "rds.h"
 #include "util.h"
 
 using i18n::Str;
@@ -27,6 +28,18 @@ std::string widest(std::initializer_list<std::string> v) {
     for (const auto& s : v)
         if (w(s) > w(best)) best = s;
     return best;
+}
+
+// Eight of the widest character the radio can show in a PS.
+std::string widestPs() {
+    std::string best;
+    for (int code = 0; code < 256; code++) {
+        const char* ch = rds::charText(static_cast<uint8_t>(code), true);
+        if (w(ch) > w(best)) best = ch;
+    }
+    std::string ps;
+    for (int i = 0; i < rds::kPsLen; i++) ps += best;
+    return ps;
 }
 
 struct Checker {
@@ -126,6 +139,14 @@ TEST(strings_fit_slots) {
         // Text entry title with the character group at the right.
         const std::string title = fmt(c.tr(Str::password_for), "Telenor-5G");
         c.fit("entry title", w(title) + 3 + w(widest({"abc", "ABC", "123", "#+=", c.tr(Str::group_edit)})), 128);
+        // Main menu on FM, and the Station screen: `No RDS` from x = 10, and each programme type right-aligned in
+        // the title row, 3 px clear of an 8-character PS of the widest glyphs drawn from x = 10.
+        c.row(c.tr(Str::station), "");
+        c.fit("line '" + std::string(c.tr(Str::no_rds)) + "'", w(c.tr(Str::no_rds)), 118);
+        for (int p = 1; p < rds::kPtyCount; p++) {
+            const char* name = c.tr(static_cast<Str>(static_cast<int>(Str::pty_1) + p - 1));
+            c.fit(std::string("programme type '") + name + "'", 10 + w(widestPs()) + 3 + w(name), 128);
+        }
         // Full-screen messages, centred.
         c.fit("message", w(c.tr(Str::installing)), 128);
         c.fit("message", w(c.tr(Str::battery_empty)), 128);

@@ -7,6 +7,8 @@
 #                      and the first line of a scenario runs at 3000 ms.
 #   OPs: turn N | hold N | press | long | side | render [LABEL]
 #        set bars N | set ssb 0|1 | set wifi off | set lang CODE | ota | empty
+#        rds sync 0|1 | rds pty N | rds ps TEXT | rds rt TEXT | rds ab   (RDS as the decoder hands it to the
+#        UI: PS and RadioText in display form; ab is an A/B flag change, which clears the RadioText)
 
 scenario splash
 @0 render t0000
@@ -482,3 +484,120 @@ render saved
 render confirm
 long
 render cancelled
+
+# RDS on FM, 99.5 MHz.
+scenario rds_home
+press
+press
+turn -9
+press
+turn -12
+rds sync 1
+rds pty 1
+rds ps -METRO-
+rds rt Metro gir deg snart mer variert musikk
+render
+rds ps RADIO 10
+render ps8
+side
+@6000 render muted
+side
+@8000 render sound
+long
+render preset_toast
+press
+turn -2
+press
+hold 10
+render presets
+
+scenario rds_home_am
+rds sync 1
+rds ps -METRO-
+render
+
+scenario rds_menu
+press
+press
+turn -9
+press
+press
+render
+turn 6
+render station
+turn 1
+render back
+
+scenario rds_station
+press
+press
+turn -9
+press
+turn -12
+rds sync 1
+rds pty 1
+rds ps -METRO-
+rds rt Metro gir deg snart mer variert musikk
+press
+turn 6
+press
+render
+turn 1
+render turned
+@20000 render later
+press
+render pressed
+
+scenario rds_station_long
+press
+press
+turn -9
+press
+rds sync 1
+rds pty 10
+rds ps RADIO 10
+rds rt MUMFORD & SONS: THE WOLF. SE WWW.RADIOMETRO.NO/SPILLELISTE-IDAG!
+press
+turn 6
+press
+render
+turn 1
+render scrolled
+turn 5
+render end
+rds ab
+rds rt New song
+render ab
+rds rt
+render ps_only
+rds sync 0
+render no_rds
+long
+render home
+
+scenario rds_station_lang
+press
+press
+turn -9
+press
+rds sync 1
+rds pty 31
+rds ps ÆÆÆÆÆÆÆÆ
+rds rt Metro gir deg snart mer variert musikk
+set lang hu
+press
+turn 6
+press
+render hu
+set lang ga
+render ga
+rds pty 3
+set lang mt
+render mt
+rds sync 0
+set lang fr
+render fr_no_rds
+set lang de
+turn -1
+press
+render de_menu

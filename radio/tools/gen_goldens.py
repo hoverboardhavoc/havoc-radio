@@ -10,6 +10,7 @@ same scenarios through the firmware UI and compare against these files.
 
 With --check nothing is written; the script exits non-zero when a golden differs from the prototype.
 """
+import json
 import os
 import re
 import sys
@@ -39,6 +40,8 @@ var clearTimeout = () => {};
 HARNESS = r"""
 var BARS = 3;
 rssi = () => BARS;
+var RDS = { sync: false, ps: '', rt: '', pty: 0, seq: 0 };
+rds = () => RDS;
 present = () => {};
 lastSeekStep = 1e15;
 function fbText() { return Array.from(fb).join(''); }
@@ -109,6 +112,18 @@ def run(script, scenario):
                 ctx.eval("S.wifi.joined = null")
             else:
                 raise ValueError(f"{name}: unknown set {key}")
+        elif op == "rds":
+            key, text = args[0], " ".join(args[1:])
+            if key == "sync":
+                ctx.eval(f"RDS.sync = {'true' if text == '1' else 'false'}")
+            elif key == "pty":
+                ctx.eval(f"RDS.pty = {int(text)}")
+            elif key in ("ps", "rt"):
+                ctx.eval(f"RDS.{key} = {json.dumps(text)}")
+            elif key == "ab":
+                ctx.eval("RDS.seq++; RDS.rt = ''")
+            else:
+                raise ValueError(f"{name}: unknown rds {key}")
         elif op in js:
             ctx.eval(js[op]())
         else:

@@ -50,7 +50,7 @@ struct Output {
     }
 };
 
-enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message };
+enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station };
 enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Side, Language };
 enum class AdjustId : uint8_t { Volume, Contrast, Light };
 enum class InfoId : uint8_t { Wifi, About };
@@ -60,6 +60,12 @@ constexpr uint32_t kMenuTimeoutMs = 8000;
 constexpr uint32_t kConfirmTimeoutMs = 30000;
 constexpr uint32_t kToastMs = 1500;
 constexpr int kPasswordMax = 64;
+
+constexpr int kRtRowW = 116;  // Station screen RadioText rows, from x = 10
+
+// Word-wraps `s` into rows at most `w` px wide, breaking a word wider than a row. Calls row(i, text) for each row
+// and returns the number of rows.
+int wrapText(const char* s, int w, void (*row)(void* ctx, int i, const char* text), void* ctx);
 
 // Computes the splash wheel's geometry once (about 9 KB, freed when the splash ends). Call it before
 // Ui::begin so the time it takes does not come out of the animation; drawing the splash computes it if needed.
@@ -116,6 +122,9 @@ private:
     void drawList(gfx::Frame& f, const radio::State& s, const Status& st);
     void drawAdjust(gfx::Frame& f, const radio::State& s);
     void drawInfo(gfx::Frame& f, const radio::State& s, const Status& st);
+    void drawStation(gfx::Frame& f, const radio::State& s, const Status& st);
+    // The Station screen goes back to the first row when the RadioText is cleared.
+    void syncStation(const Status& st);
     void drawEntry(gfx::Frame& f, const radio::State& s);
     void drawConfirm(gfx::Frame& f, const radio::State& s);
     void drawMessage(gfx::Frame& f);
@@ -139,10 +148,12 @@ private:
     char joinSsid_[33] = {};
     char joinPwd_[kPasswordMax + 1] = {};
     char message_[64] = {};
+    int stationTop_ = 0;     // first RadioText row on the Station screen
+    uint8_t stationSeq_ = 0;  // Status::rtSeq of that text
 
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
-                               Bandwidth, Seek, Join, Side, Language };
+                               Bandwidth, Seek, Join, Side, Language, Station };
     struct Item {
         char t[48];
         char mid[14];
