@@ -1,4 +1,5 @@
-// Pure input logic: quadrature decoding and the press / long press / hold + turn state machine.
+// Pure input logic: quadrature decoding, the knob's press / long press / hold + turn state machine and the side
+// button's short press and hold.
 // The GPIO side (interrupts and polling) is in input.cpp; this part is host-tested.
 #pragma once
 #include <cstdint>
@@ -31,6 +32,7 @@ struct EventQueue {
 
 constexpr uint32_t kDebounceMs = 20;
 constexpr uint32_t kLongPressMs = 600;
+constexpr uint32_t kSideHoldMs = 1000;
 
 class Debouncer {
 public:
@@ -44,7 +46,8 @@ private:
 };
 
 // Called every few milliseconds with the raw button levels (true = pressed) and the detents counted since
-// the last call.
+// the last call. The side button reports Side on a release before kSideHoldMs, or SideHold at kSideHoldMs while
+// still held; the release after a hold reports nothing.
 class Buttons {
 public:
     void step(uint32_t now, bool knob, bool side, int detents, EventQueue& out);
@@ -53,6 +56,8 @@ private:
     Debouncer knob_, side_;
     bool down_ = false, turned_ = false, longFired_ = false;
     uint32_t downAt_ = 0;
+    bool sideDown_ = false, sideHeld_ = false;
+    uint32_t sideAt_ = 0;
 };
 
 }  // namespace input

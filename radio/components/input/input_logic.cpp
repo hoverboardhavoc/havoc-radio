@@ -63,7 +63,20 @@ void Buttons::step(uint32_t now, bool knob, bool side, int detents, EventQueue& 
         if (down_ && !longFired_ && !turned_) out.push(ui::EventType::Press);
         down_ = false;
     }
-    if (side_.update(side, now, &changed) && changed) out.push(ui::EventType::Side);
+    const bool sd = side_.update(side, now, &changed);
+    if (changed && sd) {
+        sideDown_ = true;
+        sideHeld_ = false;
+        sideAt_ = now;
+    }
+    if (sideDown_ && !sideHeld_ && now - sideAt_ >= kSideHoldMs) {
+        sideHeld_ = true;
+        out.push(ui::EventType::SideHold);
+    }
+    if (changed && !sd) {
+        if (sideDown_ && !sideHeld_) out.push(ui::EventType::Side);
+        sideDown_ = false;
+    }
 }
 
 }  // namespace input

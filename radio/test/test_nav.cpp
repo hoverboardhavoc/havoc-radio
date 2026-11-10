@@ -193,7 +193,8 @@ TEST(turn_tunes_by_step) {
 }
 
 TEST(any_input_stops_seek) {
-    for (EventType e : {EventType::Turn, EventType::Press, EventType::LongPress, EventType::HoldTurn, EventType::Side}) {
+    for (EventType e : {EventType::Turn, EventType::Press, EventType::LongPress, EventType::HoldTurn, EventType::Side,
+                        EventType::SideHold}) {
         Sim h;
         h.tick(3000);
         h.st.seeking = true;
@@ -233,22 +234,188 @@ TEST(text_entry) {
     CHECK_EQ(static_cast<int>(std::strlen(e.ui.joinPassword())), ui::kPasswordMax);
 }
 
-TEST(side_button_actions) {
+TEST(side_press_is_back) {
+    // Home: nothing.
     Sim h;
     h.ev(3000, EventType::Side);
-    CHECK(h.s.muted);
-    h.s.side = radio::Side::NextPreset;
-    h.ev(3100, EventType::Side);
-    CHECK_EQ(h.s.hz, 4996000);
-    h.ev(3200, EventType::Side);
-    CHECK_EQ(h.s.hz, 9996000);
-    h.s.side = radio::Side::Back;
+    CHECK(h.ui.view() == View::Home);
+    CHECK(!h.s.muted);
+    // A list goes back.
+    Menu m;
+    m.ev(3050, EventType::Turn, 1);
+    m.ev(3100, EventType::Press);
+    CHECK_EQ(m.ui.depth(), 1);
+    m.ev(3200, EventType::Side);
+    CHECK(m.ui.listId() == ListId::Main && m.ui.depth() == 0);
+    m.ev(3300, EventType::Side);
+    CHECK(m.ui.view() == View::Home);
+    // An adjust screen confirms: the volume screen goes home with the new volume.
+    Menu v;
+    v.ev(3100, EventType::Press);
+    v.ev(3200, EventType::Turn, -5);
+    v.ev(3300, EventType::Side);
+    CHECK(v.ui.view() == View::Home);
+    CHECK_EQ(v.s.volume, 40);
+    // Info and the Station screen go back.
+    Menu i;
+    i.ev(3100, EventType::Turn, -3);
+    i.ev(3200, EventType::Press);
+    i.ev(3300, EventType::Turn, 6);
+    i.ev(3400, EventType::Press);  // About
+    CHECK(i.ui.view() == View::Info);
+    i.ev(3500, EventType::Side);
+    CHECK(i.ui.listId() == ListId::Settings);
+    Sim f;
+    f.s.mode = radio::Mode::FM;
+    f.s.hz = 100700000;
+    f.ev(3000, EventType::Press);
+    f.ev(3100, EventType::Turn, -4);
+    f.ev(3200, EventType::Press);
+    CHECK(f.ui.view() == View::Station);
+    f.ev(3300, EventType::Side);
+    CHECK(f.ui.listId() == ListId::Main);
+    // Text entry cancels: nothing joined.
+    Menu e;
+    e.ev(3100, EventType::Turn, -3);
+    e.ev(3200, EventType::Press);
+    e.ev(3300, EventType::Press);
+    e.ev(3400, EventType::Turn, 1);
+    e.ev(3500, EventType::Press);
+    e.ev(3600, EventType::Press);
+    CHECK(e.ui.view() == View::Entry);
+    e.ev(3700, EventType::Side);
+    CHECK(e.ui.listId() == ListId::Wifi);
+    CHECK(e.ui.joinSsid()[0] == 0);
+    // The splash skips; a message ignores it; the confirm screen cancels the install.
+    Sim sp;
+    sp.ev(500, EventType::Side);
+    CHECK(sp.ui.view() == View::Home);
+    Sim c;
+    c.tick(3000);
+    c.ui.confirmInstall(Sim::kBoot + 3000);
+    ui::Output o;
+    c.ui.event({EventType::Side, 0}, Sim::kBoot + 3100, c.s, c.st, o);
+    CHECK(c.ui.view() == View::Home);
+    CHECK(o.n == 1 && o.cmds[0].cmd == radio::Cmd::CancelInstall);
+    Sim msg;
+    msg.tick(3000);
+    msg.ui.message("Battery empty");
+    msg.ev(3100, EventType::Side);
+    CHECK(msg.ui.view() == View::Message);
+}
+
+TEST(lamp_off_at_power_up) {
+    Sim h;
+    CHECK(h.st.lamp == radio::Lamp::Off);
+    CHECK(ui::Status{}.lamp == radio::Lamp::Off);
+}
+
+TEST(side_hold_lamp) {
+    // From off on home: the lamp on, the lamp screen; the hold again turns it off and closes the screen.
+    Sim h;
+    h.ev(3000, EventType::SideHold);
+    CHECK(h.st.lamp == radio::Lamp::On);
+    CHECK(h.ui.view() == View::Lamp);
+    h.ev(3100, EventType::SideHold);
+    CHECK(h.st.lamp == radio::Lamp::Off);
+    CHECK(h.ui.view() == View::Home);
+    // From SOS on the lamp screen: off and closed.
+    h.ev(3200, EventType::SideHold);
     h.ev(3300, EventType::Press);
-    h.ev(3350, EventType::Turn, 1);
+    CHECK(h.st.lamp == radio::Lamp::Sos);
+    h.ev(3400, EventType::SideHold);
+    CHECK(h.st.lamp == radio::Lamp::Off);
+    CHECK(h.ui.view() == View::Home);
+    // In a list: the lamp screen opens over it and Back returns to it.
+    Menu m;
+    m.ev(3050, EventType::Turn, 1);
+    m.ev(3100, EventType::Press);  // Band list
+    m.ev(3200, EventType::SideHold);
+    CHECK(m.ui.view() == View::Lamp);
+    m.ev(3300, EventType::Side);
+    CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Bands);
+    // On, away from the lamp screen: off, and the list stays.
+    m.ev(3400, EventType::SideHold);
+    CHECK(m.st.lamp == radio::Lamp::Off);
+    CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Bands);
+    // On the lamp screen with the lamp on: off and back to the list.
+    m.ev(3500, EventType::SideHold);
+    m.ev(3600, EventType::SideHold);
+    CHECK(m.st.lamp == radio::Lamp::Off);
+    CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Bands);
+}
+
+TEST(side_hold_ignored) {
+    Sim sp;
+    sp.ev(500, EventType::SideHold);
+    CHECK(sp.ui.view() == View::Splash);
+    CHECK(sp.st.lamp == radio::Lamp::Off);
+    Sim c;
+    c.tick(3000);
+    c.ui.confirmInstall(Sim::kBoot + 3000);
+    c.ev(3100, EventType::SideHold);
+    CHECK(c.ui.view() == View::Confirm);
+    CHECK(c.st.lamp == radio::Lamp::Off);
+    Sim msg;
+    msg.tick(3000);
+    msg.ui.message("Battery empty");
+    msg.ev(3100, EventType::SideHold);
+    CHECK(msg.ui.view() == View::Message);
+    CHECK(msg.st.lamp == radio::Lamp::Off);
+}
+
+TEST(lamp_screen) {
+    Sim h;
+    h.ev(3000, EventType::SideHold);
+    // Turning sets the level, 1 to 15.
+    h.ev(3100, EventType::Turn, 3);
+    CHECK_EQ(h.s.light, 15);
+    h.ev(3200, EventType::Turn, -20);
+    CHECK_EQ(h.s.light, 1);
+    h.ev(3300, EventType::Turn, 5);
+    CHECK_EQ(h.s.light, 6);
+    // The knob press: on, SOS, off; off closes the screen.
     h.ev(3400, EventType::Press);
-    CHECK_EQ(h.ui.depth(), 1);
-    h.ev(3500, EventType::Side);
-    CHECK(h.ui.listId() == ListId::Main);
+    CHECK(h.st.lamp == radio::Lamp::Sos);
+    CHECK(h.ui.view() == View::Lamp);
+    h.ev(3500, EventType::Turn, 1);  // the level also changes in SOS
+    CHECK_EQ(h.s.light, 7);
+    h.ev(3600, EventType::Press);
+    CHECK(h.st.lamp == radio::Lamp::Off);
+    CHECK(h.ui.view() == View::Home);
+    // A long press goes home, leaving the lamp on.
+    h.ev(3700, EventType::SideHold);
+    h.ev(3800, EventType::LongPress);
+    CHECK(h.ui.view() == View::Home);
+    CHECK(h.st.lamp == radio::Lamp::On);
+    CHECK_EQ(h.s.presetCount, 5);
+    // It closes after 8 s without input, leaving the lamp on.
+    Sim t;
+    t.ev(3000, EventType::SideHold);
+    t.tick(11000);
+    CHECK(t.ui.view() == View::Lamp);
+    t.tick(11001);
+    CHECK(t.ui.view() == View::Home);
+    CHECK(t.st.lamp == radio::Lamp::On);
+}
+
+TEST(settings_light) {
+    // Settings > Light with the lamp off: the lamp on and the lamp screen; Back returns to Settings.
+    Menu m;
+    m.ev(3100, EventType::Turn, -3);
+    m.ev(3200, EventType::Press);
+    m.ev(3300, EventType::Turn, 3);
+    m.ev(3400, EventType::Press);
+    CHECK(m.ui.view() == View::Lamp);
+    CHECK(m.st.lamp == radio::Lamp::On);
+    m.ev(3500, EventType::Press);  // SOS
+    m.ev(3600, EventType::Side);
+    CHECK(m.ui.listId() == ListId::Settings);
+    CHECK_EQ(m.ui.cursor(), 3);
+    // With the lamp in SOS it stays in SOS.
+    m.ev(3700, EventType::Press);
+    CHECK(m.ui.view() == View::Lamp);
+    CHECK(m.st.lamp == radio::Lamp::Sos);
 }
 
 TEST(confirm_install) {
@@ -274,7 +441,7 @@ TEST(language_setting) {
     Menu m;
     m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);  // Settings
-    m.ev(3300, EventType::Turn, 6);
+    m.ev(3300, EventType::Turn, 5);
     m.ev(3400, EventType::Press);  // Language list, current language preselected
     CHECK(m.ui.listId() == ListId::Language);
     CHECK_EQ(m.ui.cursor(), 0);
@@ -290,7 +457,7 @@ TEST(time_list) {
     Menu m;
     m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);  // Settings
-    m.ev(3300, EventType::Turn, 5);
+    m.ev(3300, EventType::Turn, 4);
     m.ev(3400, EventType::Press);  // Time
     CHECK(m.ui.listId() == ListId::Time);
     CHECK_EQ(m.ui.cursor(), 0);
@@ -315,7 +482,7 @@ TEST(server_entry) {
     Menu m;
     m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);
-    m.ev(3300, EventType::Turn, 5);
+    m.ev(3300, EventType::Turn, 4);
     m.ev(3400, EventType::Press);
     m.ev(3500, EventType::Turn, 1);
     m.ev(3600, EventType::Press);  // Server: text entry with the server filled in, on OK

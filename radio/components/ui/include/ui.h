@@ -8,7 +8,8 @@
 
 namespace ui {
 
-enum class EventType : uint8_t { Turn, Press, LongPress, HoldTurn, Side };
+// Side is a short press of the side button, SideHold its 1 s hold.
+enum class EventType : uint8_t { Turn, Press, LongPress, HoldTurn, Side, SideHold };
 
 struct Event {
     EventType type;
@@ -42,6 +43,7 @@ struct Status {
     // The clock: UTC in ms since 1970 and the time since the last NTP sync, -1 until the first sync.
     int64_t utcMs = -1;
     int64_t syncAgeMs = -1;
+    radio::Lamp lamp = radio::Lamp::Off;
 };
 
 struct Output {
@@ -53,9 +55,9 @@ struct Output {
     }
 };
 
-enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station };
-enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Side, Language, Time };
-enum class AdjustId : uint8_t { Volume, Contrast, Light };
+enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station, Lamp };
+enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Language, Time };
+enum class AdjustId : uint8_t { Volume, Contrast };
 enum class InfoId : uint8_t { Wifi, About };
 
 constexpr uint32_t kSplashMs = 2600;
@@ -120,12 +122,15 @@ private:
     int adjustValue(const radio::State& s) const;
     void startSeek(int dir, const radio::State& s, Output& out, uint32_t now);
     void stopSeek(const Status& st, Output& out);
+    // The lamp screen, over a list as an adjust screen or in place of another screen; it turns the lamp on.
+    void openLamp(const Status& st, Output& out);
 
     void drawSplash(gfx::Frame& f, uint32_t t);
     void drawHome(gfx::Frame& f, uint32_t now, const radio::State& s, const Status& st);
     void drawGutter(gfx::Frame& f, int cursor, bool withMain, const radio::State& s);
     void drawList(gfx::Frame& f, const radio::State& s, const Status& st);
     void drawAdjust(gfx::Frame& f, const radio::State& s);
+    void drawLamp(gfx::Frame& f, const radio::State& s, const Status& st);
     void drawInfo(gfx::Frame& f, const radio::State& s, const Status& st);
     void drawStation(gfx::Frame& f, const radio::State& s, const Status& st);
     // The Station screen goes back to the first row when the RadioText is cleared.
@@ -147,7 +152,6 @@ private:
     char toast_[96] = {};
     uint32_t toastUntil_ = 0;
     uint32_t volUntil_ = 0;
-    int favIdx_ = -1;
     char entrySsid_[33] = {};
     bool entryServer_ = false;  // text entry for the NTP server, else a WiFi password
     char entry_[kPasswordMax + 1] = {};
@@ -161,7 +165,7 @@ private:
 
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
-                               Bandwidth, Seek, Join, Side, Language, Station, ToggleTimeSync, Server };
+                               Bandwidth, Seek, Join, Language, Station, ToggleTimeSync, Server, Lamp };
     struct Item {
         char t[48];
         char mid[14];

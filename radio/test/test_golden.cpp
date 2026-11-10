@@ -62,6 +62,7 @@ TEST(goldens) {
         else if (op == "press") sim->ev(now, ui::EventType::Press);
         else if (op == "long") sim->ev(now, ui::EventType::LongPress);
         else if (op == "side") sim->ev(now, ui::EventType::Side);
+        else if (op == "sidehold") sim->ev(now, ui::EventType::SideHold);
         else if (op == "ota") {
             sim->tick(now);
             sim->ui.confirmInstall(Sim::kBoot + now);

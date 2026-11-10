@@ -94,6 +94,7 @@ def run(script, scenario):
             "press": lambda: "onClick()",
             "long": lambda: "onLong()",
             "side": lambda: "onSide()",
+            "sidehold": lambda: "onSideHold()",
             "ota": lambda: "startConfirm()",
             "empty": lambda: "showMessage(T('battery_empty'))",
         }

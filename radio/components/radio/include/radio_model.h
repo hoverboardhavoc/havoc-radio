@@ -10,7 +10,8 @@ enum class Mode : uint8_t { FM, AM, LSB, USB };
 // Steps and bandwidths are kept per mode family.
 enum Family : uint8_t { kFamFM, kFamAM, kFamSSB, kFamilies };
 
-enum class Side : uint8_t { Mute, NextPreset, Back };
+// The lamp on the back: off, on at the light level, or flashing SOS at it. Not stored: off at power-up.
+enum class Lamp : uint8_t { Off, On, Sos };
 
 struct Band {
     const char* name;
@@ -40,6 +41,7 @@ struct Preset {
 constexpr int kVolumeMax = 63;
 constexpr int kContrastMin = 1;
 constexpr int kContrastMax = 15;
+constexpr int kLightMin = 1;  // the lamp level
 constexpr int kLightMax = 15;
 
 // NTP server: a host name or IPv4 address of letters, digits, '.' and '-'.
@@ -55,8 +57,7 @@ struct State {
     bool muted;
     bool agc;
     uint8_t contrast;
-    uint8_t light;
-    Side side;
+    uint8_t light;  // the lamp level, kLightMin..kLightMax
     uint8_t lang;  // index into the UI language list
     int32_t bandLast[kBandCount];  // Hz
     uint8_t presetCount;
@@ -66,6 +67,9 @@ struct State {
 };
 
 void defaults(State& s);
+// Puts a loaded state back in range: a value out of range takes its default. A light level of 0 (off, before the
+// lamp had its own on and off) loads as the default, 15.
+void repair(State& s);
 
 const char* modeName(Mode m);
 bool parseMode(const char* s, Mode* out);
@@ -100,8 +104,8 @@ enum class Cmd : uint8_t {
     Mute,         // v = 0/1
     Agc,          // v = 0/1
     Contrast,     // v = 1..15
-    Light,        // v = 0..15
-    SideAction,   // v = Side
+    Light,        // v = 1..15, the lamp level
+    Lamp,         // v = Lamp: off, on or SOS (not part of the stored state)
     Language,     // v = language index
     SavePreset,   // current frequency, named after the station (its RDS PS) or else the band
     TunePreset,   // v = index

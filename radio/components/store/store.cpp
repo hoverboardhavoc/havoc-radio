@@ -14,14 +14,19 @@ namespace {
 
 const char* TAG = "store";
 const char* kNamespace = "radio";
-// Bump when radio::State changes layout; a stored blob of another version or size is ignored, except version 1.
-constexpr uint32_t kVersion = 2;
+// Bump when radio::State changes layout; a stored blob of another version or size is ignored, except versions 1
+// and 2.
+constexpr uint32_t kVersion = 3;
 
 struct Blob {
     uint32_t version;
     radio::State state;
 };
 
+// Version 2 had the side button's action, one byte, between the light level and the language. The language byte
+// therefore sat where version 3 has padding, and every field after it is where it was.
+constexpr size_t kV2Lang = offsetof(radio::State, lang) + 1;
+static_assert(kV2Lang + 1 <= offsetof(radio::State, bandLast), "the fields after the language moved");
 // Version 1 is version 2 without the time sync setting and the NTP server at the end: its settings and presets
 // are kept and the new fields take their defaults.
 constexpr size_t kV1Size = offsetof(Blob, state) + offsetof(radio::State, timeSync);
@@ -60,31 +65,16 @@ bool loadState(radio::State& s) {
     nvs_close(h);
     radio::State d;
     radio::defaults(d);
-    if (read && n == kV1Size && b.version == 1) {
+    const bool v1 = read && n == kV1Size && b.version == 1, v2 = read && n == sizeof b && b.version == 2;
+    if (v1) {
         b.state.timeSync = d.timeSync;
         std::strcpy(b.state.ntpServer, d.ntpServer);
-    } else if (!read || n != sizeof b || b.version != kVersion) {
+    } else if (!v2 && (!read || n != sizeof b || b.version != kVersion)) {
         return false;
     }
+    if (v1 || v2) std::memcpy(&b.state.lang, reinterpret_cast<const uint8_t*>(&b.state) + kV2Lang, 1);
     s = b.state;
-    // Values out of range in a stored blob fall back to the defaults.
-    if (s.presetCount > radio::kMaxPresets) s.presetCount = 0;
-    if (s.volume > radio::kVolumeMax) s.volume = d.volume;
-    if (s.contrast < radio::kContrastMin || s.contrast > radio::kContrastMax) s.contrast = d.contrast;
-    if (s.light > radio::kLightMax) s.light = 0;
-    if (static_cast<int>(s.side) > static_cast<int>(radio::Side::Back)) s.side = radio::Side::Mute;
-    if (static_cast<int>(s.mode) > static_cast<int>(radio::Mode::USB)) s = d;
-    s.hz = radio::clampHz(s.hz, s.mode);
-    for (int i = 0; i < radio::kFamilies; i++) {
-        int n;
-        radio::steps(static_cast<radio::Family>(i), &n);
-        if (s.stepIdx[i] >= n) s.stepIdx[i] = d.stepIdx[i];
-        radio::bandwidths(static_cast<radio::Family>(i), &n);
-        if (s.bwIdx[i] >= n) s.bwIdx[i] = d.bwIdx[i];
-    }
-    for (int i = 0; i < s.presetCount; i++) s.presets[i].name[radio::kPresetName - 1] = 0;
-    s.ntpServer[radio::kNtpServerMax] = 0;
-    if (!s.ntpServer[0] || !radio::validNtpServer(s.ntpServer)) std::strcpy(s.ntpServer, d.ntpServer);
+    radio::repair(s);
     return true;
 }
 

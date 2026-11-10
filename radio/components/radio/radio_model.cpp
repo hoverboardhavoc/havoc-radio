@@ -105,8 +105,7 @@ void defaults(State& s) {
     s.volume = 45;
     s.agc = true;
     s.contrast = 15;
-    s.light = 0;
-    s.side = Side::Mute;
+    s.light = kLightMax;
     for (int i = 0; i < kBandCount; i++) s.bandLast[i] = bandDefaultHz(i);
     s.timeSync = true;
     std::strcpy(s.ntpServer, kDefaultNtpServer);
@@ -128,6 +127,27 @@ bool setNtpServer(State& s, const char* server) {
     if (!std::strcmp(s.ntpServer, v)) return false;
     std::strcpy(s.ntpServer, v);
     return true;
+}
+
+void repair(State& s) {
+    State d;
+    defaults(d);
+    if (s.presetCount > kMaxPresets) s.presetCount = 0;
+    if (s.volume > kVolumeMax) s.volume = d.volume;
+    if (s.contrast < kContrastMin || s.contrast > kContrastMax) s.contrast = d.contrast;
+    if (s.light < kLightMin || s.light > kLightMax) s.light = d.light;
+    if (static_cast<int>(s.mode) > static_cast<int>(Mode::USB)) s = d;
+    s.hz = clampHz(s.hz, s.mode);
+    for (int i = 0; i < kFamilies; i++) {
+        int n;
+        steps(static_cast<Family>(i), &n);
+        if (s.stepIdx[i] >= n) s.stepIdx[i] = d.stepIdx[i];
+        bandwidths(static_cast<Family>(i), &n);
+        if (s.bwIdx[i] >= n) s.bwIdx[i] = d.bwIdx[i];
+    }
+    for (int i = 0; i < s.presetCount; i++) s.presets[i].name[kPresetName - 1] = 0;
+    s.ntpServer[kNtpServerMax] = 0;
+    if (!s.ntpServer[0] || !validNtpServer(s.ntpServer)) std::strcpy(s.ntpServer, d.ntpServer);
 }
 
 const char* modeName(Mode m) {
@@ -352,12 +372,9 @@ bool apply(State& s, const Command& c, bool ssb, const char* station) {
             return set(s.contrast, static_cast<uint8_t>(v));
         }
         case Cmd::Light: {
-            const int v = c.v < 0 ? 0 : c.v > kLightMax ? kLightMax : c.v;
+            const int v = c.v < kLightMin ? kLightMin : c.v > kLightMax ? kLightMax : c.v;
             return set(s.light, static_cast<uint8_t>(v));
         }
-        case Cmd::SideAction:
-            if (c.v < 0 || c.v > static_cast<int>(Side::Back)) return false;
-            return set(s.side, static_cast<Side>(c.v));
         case Cmd::Language:
             if (c.v < 0 || c.v > 255) return false;
             return set(s.lang, static_cast<uint8_t>(c.v));
