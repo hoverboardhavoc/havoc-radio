@@ -9,6 +9,8 @@
 #        set bars N | set ssb 0|1 | set wifi off | set lang CODE | ota | empty
 #        rds sync 0|1 | rds pty N | rds ps TEXT | rds rt TEXT | rds ab   (RDS as the decoder hands it to the
 #        UI: PS and RadioText in display form; ab is an A/B flag change, which clears the RadioText)
+#        ntp HH:MM   (an NTP sync at that UTC time on 2026-11-10; the clock then runs on the scenario time)
+#        set server TEXT   (the NTP server setting)
 
 scenario splash
 @0 render t0000
@@ -220,7 +222,7 @@ press
 turn -4
 press
 render
-turn 6
+turn 7
 render about
 press
 render info
@@ -320,7 +322,7 @@ set wifi off
 press
 turn -4
 press
-turn 6
+turn 7
 press
 render
 
@@ -442,7 +444,7 @@ scenario language
 press
 turn -4
 press
-turn 5
+turn 6
 render setting
 press
 render list
@@ -460,7 +462,7 @@ render menu
 turn -4
 press
 render settings
-turn 6
+turn 7
 press
 render about
 
@@ -601,3 +603,192 @@ set lang de
 turn -1
 press
 render de_menu
+
+# Time: UTC from NTP.
+scenario time_home
+render unset
+ntp 13:05
+render
+@63100 render minute
+
+scenario time_home_fm
+ntp 13:05
+press
+press
+turn -9
+press
+turn -12
+rds sync 1
+rds ps -METRO-
+render
+side
+@6000 render muted
+
+# SSB with a 10 Hz step above 10 MHz: the frequency leaves no room for the time.
+scenario time_home_ssb
+ntp 13:05
+press
+press
+turn 6
+press
+press
+turn 2
+press
+turn -2
+press
+render
+press
+turn 2
+press
+turn 1
+press
+render 100hz
+
+scenario time_settings
+ntp 12:53
+@723000 press
+turn -4
+press
+turn 5
+render
+press
+render list
+turn 1
+render server
+turn 1
+render back
+hold 1
+render hold
+turn -1
+press
+render off
+press
+render on
+
+scenario time_hours
+ntp 09:30
+@10803000 press
+turn -4
+press
+turn 5
+press
+render
+
+scenario time_never
+press
+turn -4
+press
+turn 5
+render
+press
+render list
+press
+render off
+
+scenario time_server_long
+set server ntp1.stratum-two.time-servers.example.org
+press
+turn -4
+press
+turn 5
+press
+render
+turn 1
+render selected
+press
+render entry
+
+scenario time_server_entry
+press
+turn -4
+press
+turn 5
+press
+turn 1
+press
+render
+hold 1
+render group
+turn -2
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+press
+render empty
+hold 1
+press
+turn 1
+press
+hold 2
+press
+hold 1
+turn 9
+press
+turn -2
+press
+render typed
+hold 1
+turn 2
+press
+render stored
+press
+turn -1
+press
+press
+press
+press
+press
+turn -1
+press
+turn 2
+press
+render bad_ignored
+press
+turn -1
+press
+press
+press
+press
+press
+turn 1
+press
+render default
+
+scenario time_about
+ntp 13:05
+press
+turn -4
+press
+turn 7
+press
+render
+
+scenario time_lang
+ntp 12:53
+set lang hu
+@723000 press
+turn -4
+press
+turn 5
+render settings
+press
+render list
+turn 1
+press
+render entry
+long
+set lang ga
+press
+turn -4
+press
+turn 7
+press
+render about

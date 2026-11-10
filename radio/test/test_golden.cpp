@@ -73,7 +73,14 @@ TEST(goldens) {
             else if (w[1] == "ssb") sim->st.ssb = w[2] == "1";
             else if (w[1] == "wifi") sim->wifiOff();
             else if (w[1] == "lang") sim->setLang(w[2].c_str());
+            else if (w[1] == "server") std::snprintf(sim->s.ntpServer, sizeof sim->s.ntpServer, "%s", w[2].c_str());
             else t::fail(__FILE__, __LINE__, "unknown set " + w[1]);
+        } else if (op == "ntp") {
+            // An NTP sync at HH:MM UTC on 2026-11-10, as tools/gen_goldens.py.
+            const int64_t day = 1794268800000LL;
+            const int h = std::stoi(w[1].substr(0, 2)), m = std::stoi(w[1].substr(3, 2));
+            sim->tick(now);
+            sim->ntp(now, day + (h * 60 + m) * 60000LL);
         } else if (op == "rds") {
             std::string text;
             for (size_t i = 2; i < w.size(); i++) text += (i > 2 ? " " : "") + w[i];

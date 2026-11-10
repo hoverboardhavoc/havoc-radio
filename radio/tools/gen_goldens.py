@@ -48,6 +48,7 @@ function fbText() { return Array.from(fb).join(''); }
 """
 
 BOOT = 1000  # power-on time in the prototype's clock; scenario times are relative to it
+DAY = 1794268800000  # 2026-11-10 00:00 UTC in ms: the date of an `ntp HH:MM` sync
 
 
 def parse_scenarios(path):
@@ -110,6 +111,8 @@ def run(script, scenario):
                 ctx.eval(f"S.lang = {val!r}")
             elif key == "wifi" and val == "off":
                 ctx.eval("S.wifi.joined = null")
+            elif key == "server":
+                ctx.eval(f"S.server = {json.dumps(val)}")
             else:
                 raise ValueError(f"{name}: unknown set {key}")
         elif op == "rds":
@@ -124,6 +127,9 @@ def run(script, scenario):
                 ctx.eval("RDS.seq++; RDS.rt = ''")
             else:
                 raise ValueError(f"{name}: unknown rds {key}")
+        elif op == "ntp":
+            h, m = (int(x) for x in args[0].split(":"))
+            ctx.eval(f"ntpSync({DAY + (h * 60 + m) * 60000})")
         elif op in js:
             ctx.eval(js[op]())
         else:

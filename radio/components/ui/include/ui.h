@@ -39,6 +39,9 @@ struct Status {
     const char* rt = "";
     uint8_t pty = 0;
     uint8_t rtSeq = 0;       // changes when the RadioText is cleared
+    // The clock: UTC in ms since 1970 and the time since the last NTP sync, -1 until the first sync.
+    int64_t utcMs = -1;
+    int64_t syncAgeMs = -1;
 };
 
 struct Output {
@@ -51,7 +54,7 @@ struct Output {
 };
 
 enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station };
-enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Side, Language };
+enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Side, Language, Time };
 enum class AdjustId : uint8_t { Volume, Contrast, Light };
 enum class InfoId : uint8_t { Wifi, About };
 
@@ -96,6 +99,8 @@ public:
     // Credentials of the last Join command.
     const char* joinSsid() const { return joinSsid_; }
     const char* joinPassword() const { return joinPwd_; }
+    // The server of the last NtpServer command, as typed.
+    const char* serverText() const { return server_; }
 
     struct ListState {
         ListId id;
@@ -126,6 +131,7 @@ private:
     // The Station screen goes back to the first row when the RadioText is cleared.
     void syncStation(const Status& st);
     void drawEntry(gfx::Frame& f, const radio::State& s);
+    void startEntry(const char* ssid, const char* value, int idx);
     void drawConfirm(gfx::Frame& f, const radio::State& s);
     void drawMessage(gfx::Frame& f);
 
@@ -143,23 +149,26 @@ private:
     uint32_t volUntil_ = 0;
     int favIdx_ = -1;
     char entrySsid_[33] = {};
+    bool entryServer_ = false;  // text entry for the NTP server, else a WiFi password
     char entry_[kPasswordMax + 1] = {};
     int entryIdx_ = 0;
     char joinSsid_[33] = {};
     char joinPwd_[kPasswordMax + 1] = {};
+    char server_[radio::kNtpServerMax + 1] = {};
     char message_[64] = {};
     int stationTop_ = 0;     // first RadioText row on the Station screen
     uint8_t stationSeq_ = 0;  // Status::rtSeq of that text
 
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
-                               Bandwidth, Seek, Join, Side, Language, Station };
+                               Bandwidth, Seek, Join, Side, Language, Station, ToggleTimeSync, Server };
     struct Item {
         char t[48];
         char mid[14];
-        char r[32];
+        char r[48];  // a cut NTP server: up to 42 one-pixel characters and the ellipsis
         Act act;
         int arg;
+        bool skip;  // shown, not selectable
     };
     struct Gutter {
         gfx::Icon icon;
