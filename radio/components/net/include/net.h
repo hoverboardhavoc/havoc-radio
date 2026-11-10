@@ -1,5 +1,6 @@
 // WiFi station with the saved network; an open access point "Havoc-Radio" when none is saved or it cannot be
-// joined within 15 s, while it keeps trying to rejoin. mDNS name radio.local. No outside connections.
+// joined within 15 s, while it keeps trying to rejoin. mDNS name radio.local. The one outside connection is the
+// SNTP client, while time sync is on.
 #pragma once
 #include "ui.h"
 
@@ -23,5 +24,8 @@ void start();
 void join(const char* ssid, const char* password);  // saves the credentials
 void scan();
 void info(Info& out);
+// Runs the SNTP client while time sync is on and the radio is joined in station mode with an address, and
+// restarts it when the server changes. Called from the UI loop with the current setting.
+void timeSync(bool on, const char* server);
 
 }  // namespace net

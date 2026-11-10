@@ -18,6 +18,7 @@
 #include "ssd1306.h"
 #include "store.h"
 #include "ui.h"
+#include "utc_clock.h"
 #include "web.h"
 
 namespace {
@@ -93,6 +94,7 @@ extern "C" void app_main() {
     radio::start(s);
     input::start();
     power::start();
+    clk::init();
 
     ui::prepareSplash();
     s_ui.begin(millis());
@@ -156,6 +158,7 @@ extern "C" void app_main() {
             web::start(kVersion);
             s_netUp = true;
         }
+        if (s_netUp) net::timeSync(s.timeSync, s.ntpServer);
         store::poll(now);
         vTaskDelay(1);
     }
