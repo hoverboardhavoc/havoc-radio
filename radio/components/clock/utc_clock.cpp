@@ -26,7 +26,7 @@ void onSync(struct timeval*) {
     taskENTER_CRITICAL();
     s_core.synced(utc, mono);
     taskEXIT_CRITICAL();
-    ESP_LOGI("clock", "synced, %lld s UTC", static_cast<long long>(tv.tv_sec));
+    ESP_LOGI("clock", "synced, %ld s UTC", static_cast<long>(tv.tv_sec));  // the nano printf has no %lld
 }
 
 }  // namespace
