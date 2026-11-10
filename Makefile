@@ -56,6 +56,7 @@ OBJ := $(patsubst %.cpp,$(HOST)/obj/%.o,$(LIB_SRC) $(TEST_SRC)) $(GEN_SRC:.cpp=.
 
 test: $(HOST)/tests install-image
 	$(HOST)/tests
+	$(NODE) $(RADIO)/test/test_page.js $(ROOT)
 	$(PY) $(RADIO)/test/test_install_image.py
 	$(MAKE) installer-test
 

@@ -34,6 +34,14 @@ td.a button { padding: 2px 7px; }
 .bars { font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
 #status { color: var(--muted); font-size: 0.85rem; }
 #otaMsg { color: var(--muted); }
+.rds { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; display: grid; gap: 4px; }
+.ps { font: 700 1.35rem/1.2 ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
+.rt { min-height: 1.45em; }
+.tag { border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; font-size: 0.8rem; }
+.tag.on { border-color: var(--accent); color: var(--accent); }
+.mono { font-family: ui-monospace, Menlo, monospace; }
+.nosig { color: var(--muted); font-style: italic; }
+.af a { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
 </style>
 </head>
 <body>
@@ -44,6 +52,7 @@ td.a button { padding: 2px 7px; }
     <div class="freq"><span id="freq">--</span><small id="unit"></small></div>
     <div class="meta"><span id="band"></span><span id="mode"></span><span><span data-t="web_signal"></span>
       <span class="bars" id="bars"></span> <span id="rssi"></span></span></div>
+    <div class="rds" id="rds" hidden></div>
     <div class="row">
       <button id="down" type="button">&minus;</button>
       <input id="tuneIn" inputmode="decimal" size="10">
@@ -90,6 +99,24 @@ td.a button { padding: 2px 7px; }
     <div class="meta"><span id="version"></span><span id="battery"></span></div>
   </section>
 </main>
+<script id="lib">
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// The RDS part of the frequency card, as HTML, for the state's `rds` (null outside FM) and tuned frequency `hz`.
+// `t` looks up a string. Each other FM frequency of the station is a link that tunes to it; LW and MW ones are text.
+function rdsHtml(r, hz, t) {
+  if (!r) return '';
+  if (!r.sync) return `<div class="nosig">${esc(t('web_rds_searching'))}</div>`;
+  const tags = [];
+  if (r.pty) tags.push(`<span class="tag">${esc(t('pty_' + r.pty))}</span>`);
+  if (r.tp) tags.push(`<span class="tag${r.ta ? ' on' : ''}">TP</span>`);
+  if (r.pi) tags.push(`<span class="mono">PI ${esc(r.pi)}</span>`);
+  const af = r.af.filter(f => f !== hz).map(f => f >= 64e6 ? `<a href="#" data-hz="${f}">${(f / 1e6).toFixed(1)}</a>`
+    : `<span>${f / 1e3}k</span>`);
+  return `<div class="ps">${esc(r.ps)}</div><div class="rt">${esc(r.rt)}</div>` +
+    (tags.length ? `<div class="meta">${tags.join('')}</div>` : '') +
+    (af.length ? `<div class="meta af">${esc(t('web_also_on'))} ${af.join(' ')}</div>` : '');
+}
+</script>
 <script>
 const $ = id => document.getElementById(id);
 let T = {}, lang = '', st = null;
@@ -128,6 +155,8 @@ function render(s) {
   $('mode').textContent = s.mode;
   $('bars').textContent = '▂▃▅▆█'.slice(0, s.bars).padEnd(5, '·');
   $('rssi').textContent = `${s.rssi} dBµV, ${s.snr} dB`;
+  $('rds').hidden = !s.rds;
+  $('rds').innerHTML = rdsHtml(s.rds, s.hz, t);
   if (document.activeElement !== $('tuneIn')) $('tuneIn').value = s.mode === 'FM' ? (s.hz / 1e6).toFixed(2) : (s.hz / 1e3).toString();
   if (s.bands) fill($('bandSel'), s.bands, Math.max(0, s.bands.indexOf(s.band)));
   const modes = s.mode === 'FM' ? ['FM'] : s.ssb ? ['AM', 'LSB', 'USB'] : ['AM'];
@@ -168,6 +197,10 @@ $('tune').onclick = () => {
 };
 $('tuneIn').onkeydown = e => { if (e.key === 'Enter') $('tune').onclick(); };
 $('up').onclick = () => tuneTo(st.hz + st.stepHz);
+$('rds').onclick = e => {
+  const a = e.target.closest('a[data-hz]');
+  if (a) { e.preventDefault(); tuneTo(+a.dataset.hz); }
+};
 $('down').onclick = () => tuneTo(st.hz - st.stepHz);
 $('bandSel').onchange = e => post('/api/band', { band: st.bands[e.target.value] });
 $('modeSel').onchange = e => post('/api/mode', { mode: e.target.selectedOptions[0].textContent });
