@@ -12,6 +12,7 @@ The pictures are the K-Radio's own screens, enlarged three times. The screen is 
 - [The main menu](#the-main-menu)
 - [Station (RDS)](#station-rds)
 - [Presets](#presets)
+- [The lamp](#the-lamp)
 - [Settings](#settings)
 - [Typing a WiFi password](#typing-a-wifi-password)
 - [The web page](#the-web-page)
@@ -42,13 +43,19 @@ The K-Radio has a wheel, which turns in clicks and also presses, and a side butt
 | Press | Press the wheel and let go. | Opens the main menu | Chooses the selected entry |
 | Long press | Hold the wheel down for 0.6 s without turning. | Saves the frequency as a preset | Goes to the home screen |
 | Hold + turn | Hold the wheel down and turn it. | Sets the volume | Jumps four entries |
-| Side button | Press the side button. | Mute, next preset or back, as set in Settings | The same |
+| Side button | Press the side button and let go within 1 s. | Nothing | Goes back one screen |
+| Side button hold | Hold the side button down for 1 s. | Turns the lamp on or off | The same |
 
 Turning clockwise raises the frequency, moves the selection down a list and raises a value. Turning anticlockwise
 does the opposite. In text entry, hold + turn jumps to the next group of characters.
 
-The side button mutes by default. [Settings > Side button](#side-button) changes it to step through the presets or
-to go back one screen.
+The side button, labelled 返回/点灯 (back / lamp), does what Back in the left column does. In a list, on an info
+screen, on the Station screen and on the lamp screen it returns one screen. On the volume and contrast screens it
+keeps the value and leaves the screen, as a press does. In text entry it cancels and returns to the WiFi or Time
+list. On the firmware update screen it cancels the update.
+
+Holding the side button for 1 s works the lamp on the back: it acts at 1 s, while the button is still held, and
+letting go afterwards does nothing. See [The lamp](#the-lamp).
 
 Any input stops a running seek.
 
@@ -124,11 +131,8 @@ Short messages replace the top row for 1.5 s, in inverted text.
 
 | Message | Cause |
 |---|---|
-| `Muted`, `Sound on` | The side button, set to Mute, was pressed. |
 | `Saved as preset 6` | A long press saved the frequency as preset 6. |
 | `Presets full` | A long press found 20 presets already saved. |
-| `Preset 1 RWM` | The side button, set to Next preset, tuned preset 1, named RWM. |
-| `No presets` | The side button, set to Next preset, found no presets. |
 | `No seek in SSB` | A seek was started in LSB or USB. |
 | `Joining Telenor-5G` | A WiFi password was entered for the network Telenor-5G. |
 | `Update cancelled` | A firmware update was cancelled on the K-Radio. |
@@ -317,18 +321,37 @@ Each row shows the preset's number and name, with its frequency at the right (`9
 opens on the preset at the current frequency. Choosing a preset tunes to it, in its own mode, and returns to the home
 screen. An empty list opens with Back selected.
 
-### Next preset on the side button
-
-With [Settings > Side button](#side-button) set to `Next preset`, each press of the side button tunes the next preset
-in the list. After the last preset it starts again at preset 1. The top row shows the preset's number and name. With
-no presets saved, the K-Radio shows `No presets`.
-
-![The side button tuned preset 1: Preset 1 RWM, 4996 kHz](images/guide/side_setting_next.png)
-
 ### Editing presets
 
 The K-Radio has no screens for renaming, moving or deleting presets. The [web page](#the-web-page) does this. It can
 also save the current frequency under a name of choice.
+
+## The lamp
+
+The lamp is the six white LEDs on the back of the K-Radio. It is off when the K-Radio is switched on.
+
+Hold the side button for 1 s to turn the lamp on. The lamp screen opens with it. Hold the side button for 1 s again
+to turn the lamp off, from any screen; if the lamp screen is open, it closes. Settings > Light also opens the lamp
+screen.
+
+![The lamp screen: Light, a full bar, Press: SOS, 15/15](images/guide/lamp.png)
+
+On the lamp screen:
+
+- Turning the wheel sets the level from 1 to 15. The lamp follows at once. The level is kept when the K-Radio is
+  switched off.
+- Pressing the wheel goes from on to SOS, and from SOS to off. Off closes the screen. The bottom left shows what the
+  next press does: `Press: SOS` or `Press: off`.
+- The side button returns to the screen before, and a long press goes to the home screen. The screen also closes
+  after 8 s without input. Leaving the screen leaves the lamp as it is.
+
+![A lower level: Light, a shorter bar, 6/15](images/guide/lamp_lower.png)
+
+In SOS the title reads `Light SOS` and the lamp flashes SOS in Morse code (`... --- ...`) at the level: a dot is
+0.3 s on, a dash 0.9 s, with 0.3 s off inside a letter, 0.9 s between letters and 2.1 s before it starts again. It
+starts with the first dot when SOS is chosen and keeps flashing whatever the screen shows.
+
+![SOS: Light SOS, Press: off, 6/15](images/guide/lamp_sos.png)
 
 ## Settings
 
@@ -337,15 +360,14 @@ and Mute, select it.
 
 ![Settings, first part: WiFi Lab, AGC on, Contrast 15, Light off](images/guide/settings.png)
 
-![Settings, last part: Side button mute, Time --:--, Language English, About](images/guide/settings_about.png)
+![Settings, last part: Light off, Time --:--, Language English, About](images/guide/settings_about.png)
 
 | Entry | Value shown | Press it to |
 |---|---|---|
 | WiFi | the joined network, or `not joined` | open the WiFi list |
 | AGC | `on` or `off` | switch AGC on or off |
 | Contrast | 1 to 15 | set the screen contrast |
-| Light | 1 to 15, or `off` | set the light's brightness |
-| Side button | `mute`, `preset` or `back` | choose what the side button does |
+| Light | `off`, the lamp level (1 to 15) while the lamp is on, or `SOS` | open the lamp screen |
 | Time | the time in UTC, or `--:--` before the clock is set | open the Time list |
 | Language | the language's name | choose the language |
 | About | | show the version, address, battery level and time |
@@ -396,25 +418,12 @@ turns. Press the wheel to return to Settings.
 
 ### Light
 
-![The light screen: Light, a bar, 6/15](images/guide/light_on.png)
+The Light row shows the lamp: `off`, its level while it is on, or `SOS`. Pressing it opens the
+[lamp screen](#the-lamp) and turns the lamp on if it is off. Back on the lamp screen returns to Settings.
 
-Light sets the brightness of the K-Radio's red light from 0 to 15. At 0 the light is off. Settings then shows `off`.
-Press the wheel to return to Settings.
+![Settings with Light selected: Light off](images/guide/light_off.png)
 
-### Side button
-
-![The side button list: Mute, Next preset, Back](images/guide/side_setting.png)
-
-Choose what the side button does. The K-Radio returns to Settings, which shows the choice as `mute`, `preset` or
-`back`.
-
-- `Mute` (the default) mutes or unmutes on any screen. The top row shows `Muted` or `Sound on`.
-- `Next preset` tunes the next preset, as described in [Presets](#next-preset-on-the-side-button).
-- `Back` does what Back in the left column does. In a list it returns one level. On the volume, contrast and light
-  screens it keeps the value and leaves the screen, as a press does. In text entry it cancels and returns to the WiFi list. On the home screen
-  it does nothing.
-
-On the firmware update screen the side button cancels the update, whatever its setting.
+![Settings with the lamp flashing SOS: Light SOS](images/guide/light_back_sos.png)
 
 ### Time
 
@@ -515,8 +524,8 @@ The ring wraps round: after `OK` comes `a` again.
 
 ![The edit group: space selected, then DEL and OK](images/guide/entry_edit.png)
 
-A long press cancels and returns to the home screen. With the side button set to Back, the side button cancels and
-returns to the WiFi list. The password screen does not time out. A password holds at most 64 characters.
+A long press cancels and returns to the home screen. The side button cancels and returns to the WiFi list. The
+password screen does not time out. A password holds at most 64 characters.
 
 ## The web page
 
@@ -593,7 +602,7 @@ While `Installing` shows, the K-Radio ignores the wheel and the side button.
 
 Charge the K-Radio through its USB-C port. Settings > About and the web page show the battery level.
 
-When the battery runs empty, the K-Radio shows `Battery empty`. It mutes, switches off the receiver and the light,
+When the battery runs empty, the K-Radio shows `Battery empty`. It mutes, switches off the receiver and the lamp,
 and goes to sleep. It ignores the wheel and the side button from then on.
 
 ![Battery empty](images/guide/battery_empty.png)
