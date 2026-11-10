@@ -66,6 +66,28 @@ private:
     size_t len_ = 0;
 };
 
+// RDS in FM, else null. The texts are the full UTF-8, as the receiver sent them.
+void rdsJson(Json& j, const radio::State& s) {
+    if (!radio::isFm(s.mode)) return j.raw("null");
+    rds::Decoder d;
+    radio::rdsState(d);
+    char text[rds::kRtBuf];
+    j.raw("{\"sync\":%s,\"pi\":", d.sync() ? "true" : "false");
+    if (d.hasPi())
+        j.raw("\"%04X\"", d.pi());
+    else
+        j.raw("null");
+    d.ps(text, sizeof text, false);
+    j.raw(",\"ps\":");
+    j.str(text);
+    d.rt(text, sizeof text, false);
+    j.raw(",\"rt\":");
+    j.str(text);
+    j.raw(",\"pty\":%d,\"tp\":%s,\"ta\":%s,\"af\":[", d.pty(), d.tp() ? "true" : "false", d.ta() ? "true" : "false");
+    for (int i = 0; i < d.afCount(); i++) j.raw("%s%ld", i ? "," : "", static_cast<long>(d.afHz(i)));
+    j.raw("]}");
+}
+
 void stateJson(Json& j, bool full) {
     radio::State s;
     radio::snapshot(s);
@@ -102,7 +124,8 @@ void stateJson(Json& j, bool full) {
         j.str(p.name);
         j.raw(",\"hz\":%ld,\"mode\":\"%s\",\"text\":\"%s\"}", static_cast<long>(p.hz), radio::modeName(p.mode), text);
     }
-    j.raw("]");
+    j.raw("],\"rds\":");
+    rdsJson(j, s);
     if (full) {
         j.raw(",\"bands\":[");
         for (int i = 0; i < radio::kBandCount; i++) j.raw("%s\"%s\"", i ? "," : "", radio::kBands[i].name);
@@ -129,7 +152,7 @@ cJSON* body(httpd_req_t* req) {
 }
 
 esp_err_t sendState(httpd_req_t* req, bool full) {
-    static char buf[3072];
+    static char buf[3584];
     Json j(buf, sizeof buf);
     stateJson(j, full);
     httpd_resp_set_type(req, "application/json");
@@ -259,6 +282,33 @@ esp_err_t postPresets(httpd_req_t* req) {
 
 esp_err_t getPresets(httpd_req_t* req) { return sendState(req, false); }
 
+// The last RDS groups received, oldest first, each as "<ms> AAAA BBBB CCCC DDDD EE" (arrival time in ms since
+// boot, blocks A to D and the block error levels BLEA..BLED in hex): the form the decoder's host tests replay.
+esp_err_t getRdsGroups(httpd_req_t* req) {
+    constexpr size_t kLine = 32;
+    auto* raw = static_cast<rds::Raw*>(std::malloc(sizeof(rds::Raw) * rds::Ring::kLen));
+    char* out = static_cast<char*>(std::malloc(rds::Ring::kLen * (kLine + 4) + 32));
+    if (!raw || !out) {
+        std::free(raw);
+        std::free(out);
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "busy", 4);
+    }
+    const int n = radio::rdsGroups(raw, rds::Ring::kLen);
+    size_t len = std::strlen(std::strcpy(out, "{\"groups\":["));
+    for (int i = 0; i < n; i++) {
+        char line[kLine];
+        rds::Ring::format(raw[i], line, sizeof line);
+        len += std::sprintf(out + len, "%s\n\"%s\"", i ? "," : "", line);
+    }
+    len += std::sprintf(out + len, "\n]}\n");
+    httpd_resp_set_type(req, "application/json");
+    const esp_err_t r = httpd_resp_send(req, out, len);
+    std::free(raw);
+    std::free(out);
+    return r;
+}
+
 bool deletePreset(radio::State& s, void* arg) { return radio::presetDelete(s, *static_cast<int*>(arg)); }
 
 esp_err_t delPresets(httpd_req_t* req) {
@@ -312,7 +362,7 @@ esp_err_t getEvents(httpd_req_t* req) {
 }
 
 void pushEvents(void*) {
-    static char buf[2560];
+    static char buf[3072];
     Json j(buf, sizeof buf);
     j.raw("event: state\ndata: ");
     stateJson(j, false);
@@ -400,7 +450,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 16;
+    cfg.max_uri_handlers = 18;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -414,6 +464,7 @@ void start(const char* version) {
     for (const char* u : {"/api/tune", "/api/band", "/api/mode", "/api/step", "/api/bandwidth", "/api/volume"})
         handle(u, HTTP_POST, postSetting);
     handle("/api/presets", HTTP_GET, getPresets);
+    handle("/api/rds/groups", HTTP_GET, getRdsGroups);
     handle("/api/presets", HTTP_POST, postPresets);
     handle("/api/presets", HTTP_DELETE, delPresets);
     handle("/api/wifi", HTTP_POST, postWifi);

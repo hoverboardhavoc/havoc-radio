@@ -1,6 +1,7 @@
 // The radio: owns the model state (under a mutex) and a task that keeps the Si4732 in step with it.
 #pragma once
 #include "radio_model.h"
+#include "rds.h"
 
 namespace radio {
 
@@ -21,6 +22,10 @@ bool submit(const Command& c);
 bool edit(bool (*fn)(State&, void*), void* arg);
 void snapshot(State& out);
 Live live();
+// The RDS decoder's state; empty outside FM.
+void rdsState(rds::Decoder& out);
+// The last groups received, oldest first, as many as fit in `max`. Returns the count.
+int rdsGroups(rds::Raw* out, int max);
 // Battery empty: amplifier muted and the receiver powered down; the task stops.
 void shutdown();
 

@@ -5,8 +5,9 @@ code, keyed like the English table. `radio/tools/gen_strings.py` turns them into
 `GET /api/strings` serves the current language to the web page.
 
 All translations need review by native speakers. They were written to fit the 128x32 display, so many use short
-forms or abbreviations (for example the text entry title, which shares its row with the character group, and the
-Mute flag on the home screen, which has room for about five letters). These are the least certain: Walloon
+forms or abbreviations (for example the text entry title, which shares its row with the character group, the
+Mute flag on the home screen, which has room for about five letters, and the RDS programme types, which share the
+Station screen's title row with an 8-character station name). These are the least certain: Walloon
 (Feller spelling), Irish, Faroese, Maltese and Swahili.
 
 ## Changing a translation

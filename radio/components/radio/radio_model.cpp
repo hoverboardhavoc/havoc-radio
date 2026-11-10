@@ -68,6 +68,10 @@ void fixedMilli(int32_t k, int digits, char* out, size_t n) {
 void copyName(char* dst, const char* src) {
     size_t i = 0;
     for (; src[i] && i < kPresetName - 1; i++) dst[i] = src[i];
+    // A cut inside a UTF-8 character leaves that character out.
+    if ((static_cast<uint8_t>(src[i]) & 0xC0) == 0x80)
+        while (i && (static_cast<uint8_t>(dst[--i]) & 0xC0) == 0x80) {
+        }
     dst[i] = 0;
 }
 
@@ -284,7 +288,7 @@ bool set(T& field, T v) {
 
 }  // namespace
 
-bool apply(State& s, const Command& c, bool ssb) {
+bool apply(State& s, const Command& c, bool ssb, const char* station) {
     switch (c.cmd) {
         case Cmd::Tune: return set(s.hz, alignHz(c.v, s.mode));
         case Cmd::Band: {
@@ -337,7 +341,8 @@ bool apply(State& s, const Command& c, bool ssb) {
         case Cmd::Language:
             if (c.v < 0 || c.v > 255) return false;
             return set(s.lang, static_cast<uint8_t>(c.v));
-        case Cmd::SavePreset: return presetAdd(s, bandLabel(s.hz, s.mode), s.hz, s.mode);
+        case Cmd::SavePreset:
+            return presetAdd(s, station && *station ? station : bandLabel(s.hz, s.mode), s.hz, s.mode);
         case Cmd::TunePreset: {
             if (c.v < 0 || c.v >= s.presetCount) return false;
             const Preset& p = s.presets[c.v];

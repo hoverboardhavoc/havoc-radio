@@ -4,6 +4,7 @@
 
 #include "board.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -24,6 +25,8 @@ SemaphoreHandle_t s_lock;
 TaskHandle_t s_task;
 State s_state;
 Live s_live;
+rds::Decoder s_rds;
+rds::Ring s_rdsRing;
 // Requests to the task, under the lock.
 int8_t s_seekReq = 0;
 bool s_stopReq = false;
@@ -113,8 +116,13 @@ bool powerUpFor(const State& s, Applied& a) {
     }
     a.up = true;
     a.func = f;
+    {
+        Lock lock;
+        s_rds.reset();
+    }
     if (f == si4732::Func::FM) {
         si4732::setProperty(si4732::prop::kFmDeemphasis, 1);  // 50 us
+        si4732::rdsEnable();
     } else {
         si4732::setProperty(si4732::prop::kAmAvcMaxGain, 36 * 340);  // 36 dB, as the stock firmware's library sets
         if (f == si4732::Func::SSB) si4732::setProperty(si4732::prop::kAmSoftMuteMaxAttenuation, 0);
@@ -146,6 +154,30 @@ void seekBand(const State& s) {
         si4732::setProperty(si4732::prop::kAmSeekBottom, static_cast<uint16_t>(lo));
         si4732::setProperty(si4732::prop::kAmSeekTop, static_cast<uint16_t>(hi));
         si4732::setProperty(si4732::prop::kAmSeekSpacing, static_cast<uint16_t>(step > 0 ? step : 1));
+    }
+}
+
+// RDS starts again after a tune or a seek: the decoder is reset and the receiver's FIFO emptied.
+void rdsRestart() {
+    si4732::RdsStatus st;
+    si4732::rdsStatus(true, st);
+    Lock lock;
+    s_rds.reset();
+}
+
+// Reads the groups waiting in the receiver's FIFO, one call per group, at most kRdsReads calls.
+constexpr int kRdsReads = 8;
+void rdsPoll() {
+    for (int i = 0; i < kRdsReads; i++) {
+        si4732::RdsStatus st;
+        if (!si4732::rdsStatus(false, st)) return;
+        const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+        Lock lock;
+        s_rds.setSync(st.sync);
+        if (!st.fifoUsed) return;
+        const rds::Group g{{st.blk[0], st.blk[1], st.blk[2], st.blk[3]}, st.ble};
+        s_rds.group(g);
+        s_rdsRing.push(now, g);
     }
 }
 
@@ -199,12 +231,14 @@ void task(void*) {
         if (stopReq && seeking) {
             si4732::TuneStatus t;
             if (si4732::tuneStatus(fm, true, true, t)) storeTuned(t, fm, a);
+            if (fm) rdsRestart();
             Lock lock;
             s_live.seeking = false;
             seeking = false;
         }
         if (seekReq && !seeking && funcOf(s.mode) != si4732::Func::SSB) {
             seekBand(s);
+            if (fm) rdsRestart();
             if (fm ? si4732::seekFm(seekReq > 0) : si4732::seekAm(seekReq > 0, amAntennaCap(s.hz / 1000))) {
                 Lock lock;
                 s_live.seeking = true;
@@ -217,12 +251,16 @@ void task(void*) {
             const bool done = si4732::seekDone();
             if (si4732::tuneStatus(fm, false, done, t)) storeTuned(t, fm, a);
             if (done) {
+                if (fm) rdsRestart();
                 Lock lock;
                 s_live.seeking = false;
             }
             continue;
         }
-        if (s.hz != a.hz || s.mode != a.mode) applyTune(s, a);
+        if (s.hz != a.hz || s.mode != a.mode) {
+            applyTune(s, a);
+            if (fm) rdsRestart();
+        }
         const int bw = s.bwIdx[family(s.mode)];
         if (bw != a.bw) {
             switch (family(s.mode)) {
@@ -245,6 +283,7 @@ void task(void*) {
             a.muted = s.muted;
         }
         setAmp(s, a);
+        if (fm) rdsPoll();
         const uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
         if (now - lastRsq >= 500) {
             lastRsq = now;
@@ -290,6 +329,13 @@ bool submit(const Command& c) {
         switch (c.cmd) {
             case Cmd::Seek: s_seekReq = static_cast<int8_t>(c.v > 0 ? 1 : -1); break;
             case Cmd::SeekStop: s_stopReq = true; break;
+            case Cmd::SavePreset: {
+                // Named after the station shown on home, as the radio's display draws it.
+                char ps[rds::kPsBuf];
+                s_rds.ps(ps, sizeof ps, true);
+                changed = apply(s_state, c, s_live.ssb, ps);
+                break;
+            }
             default: changed = apply(s_state, c, s_live.ssb); break;
         }
     }
@@ -315,6 +361,18 @@ void snapshot(State& out) {
 Live live() {
     Lock lock;
     return s_live;
+}
+
+void rdsState(rds::Decoder& out) {
+    Lock lock;
+    out = s_rds;
+}
+
+int rdsGroups(rds::Raw* out, int max) {
+    Lock lock;
+    const int n = s_rdsRing.count() < max ? s_rdsRing.count() : max;
+    for (int i = 0; i < n; i++) out[i] = s_rdsRing.at(s_rdsRing.count() - n + i);
+    return n;
 }
 
 void shutdown() {

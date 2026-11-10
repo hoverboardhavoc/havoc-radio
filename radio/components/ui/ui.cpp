@@ -166,6 +166,51 @@ void wheelLogo(Frame& f, int cx, double phi, double t, double heat) {
 
 }  // namespace
 
+int wrapText(const char* s, int w, void (*row)(void* ctx, int i, const char* text), void* ctx) {
+    constexpr size_t kMax = 160;  // a RadioText as the display draws it is at most 128 bytes
+    char cur[kMax] = "", word[kMax], t[2 * kMax + 1];
+    int n = 0;
+    const char* p = s;
+    for (;;) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        const char* e = p;
+        while (*e && *e != ' ') e++;
+        const size_t wl = static_cast<size_t>(e - p) < kMax - 1 ? static_cast<size_t>(e - p) : kMax - 1;
+        std::memcpy(word, p, wl);
+        word[wl] = 0;
+        p = e;
+        snprintf(t, sizeof t, cur[0] ? "%s %s" : "%s%s", cur, word);
+        if (gfx::textW(t) <= w) {
+            copy(cur, sizeof cur, t);
+            continue;
+        }
+        if (cur[0]) row(ctx, n++, cur);
+        while (gfx::textW(word) > w) {
+            // The longest start of the word that fits, at least one character.
+            const char* end = word;
+            gfx::nextCp(end);
+            for (;;) {
+                const char* next = end;
+                if (!gfx::nextCp(next)) break;
+                const size_t k = static_cast<size_t>(next - word);
+                std::memcpy(t, word, k);
+                t[k] = 0;
+                if (gfx::textW(t) > w) break;
+                end = next;
+            }
+            const size_t k = static_cast<size_t>(end - word);
+            std::memcpy(t, word, k);
+            t[k] = 0;
+            row(ctx, n++, t);
+            std::memmove(word, end, std::strlen(end) + 1);
+        }
+        copy(cur, sizeof cur, word);
+    }
+    if (cur[0]) row(ctx, n++, cur);
+    return n;
+}
+
 void prepareSplash() {
     if (s_wheel) return;
     s_wheel = new WheelGeometry;
@@ -239,6 +284,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             snprintf(buf, sizeof buf, "%d", s.volume);
             add(tr(Str::volume), s.muted ? tr(Str::val_mute) : buf, Act::Adjust, static_cast<int>(AdjustId::Volume));
             add(tr(Str::seek), "", Act::Go, static_cast<int>(ListId::Seek));
+            if (radio::isFm(s.mode)) add(tr(Str::station), "", Act::Station);
             gutter_[0] = {gfx::Icon::Presets, Act::Go, static_cast<int>(ListId::Presets)};
             gutter_[1] = {s.muted ? gfx::Icon::Muted : gfx::Icon::Volume, Act::ToggleMute, 0};
             gutter_[2] = {gfx::Icon::Settings, Act::Go, static_cast<int>(ListId::Settings)};
@@ -430,6 +476,12 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
             entryIdx_ = 0;
             view_ = View::Entry;
             return;
+        case Act::Station:
+            if (depth_ < 4) stack_[depth_++] = list_;
+            view_ = View::Station;
+            stationTop_ = 0;
+            stationSeq_ = st.rtSeq;
+            return;
         case Act::Side: out.push(Cmd::SideAction, arg); return popTo();
         case Act::Language: out.push(Cmd::Language, arg); return popTo();
     }
@@ -473,6 +525,12 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     break;
                 }
                 case View::Entry: entryIdx_ = mod(entryIdx_ + d, kRingLen); break;
+                case View::Station: {
+                    syncStation(st);
+                    const int rows = wrapText(st.rt, kRtRowW, [](void*, int, const char*) {}, nullptr);
+                    stationTop_ = clampi(stationTop_ + d, 0, rows - 3 > 0 ? rows - 3 : 0);
+                    break;
+                }
                 default: break;
             }
             return;
@@ -480,7 +538,8 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
         case EventType::Press:
             switch (view_) {
                 case View::Home: return openList(ListId::Main, false, s, st);
-                case View::Info: return popTo();
+                case View::Info:
+                case View::Station: return popTo();
                 case View::Adjust: return adjustDone();
                 case View::Confirm:
                     out.push(Cmd::Install);
@@ -569,7 +628,8 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     return toast(t, now);
                 }
                 case radio::Side::Back:
-                    if (view_ == View::List || view_ == View::Info || view_ == View::Entry) return popTo();
+                    if (view_ == View::List || view_ == View::Info || view_ == View::Entry || view_ == View::Station)
+                        return popTo();
                     if (view_ == View::Adjust) return adjustDone();
                     return;
             }
@@ -601,6 +661,7 @@ void Ui::render(Frame& f, uint32_t now, const State& s, const Status& st) {
         case View::Entry: return drawEntry(f, s);
         case View::Confirm: return drawConfirm(f, s);
         case View::Message: return drawMessage(f);
+        case View::Station: return drawStation(f, s, st);
     }
 }
 
@@ -648,8 +709,14 @@ void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
         snprintf(t, sizeof t, "%s  %s %s", band, i18n::tr(s.lang, Str::seek), st.seekDir > 0 ? "\u25b6" : "\u25c0");
         gfx::text(f, 0, 0, t);
     } else {
-        int x = gfx::text(f, 0, 0, band);
-        x = gfx::text(f, x + 5, 0, radio::modeName(s.mode));
+        // On FM the station's RDS name, when known, replaces the band name and mode.
+        int x;
+        if (radio::isFm(s.mode) && st.ps[0]) {
+            x = gfx::text(f, 0, 0, st.ps);
+        } else {
+            x = gfx::text(f, 0, 0, band);
+            x = gfx::text(f, x + 5, 0, radio::modeName(s.mode));
+        }
         char t[48];
         snprintf(t, sizeof t, "%s %s", i18n::tr(s.lang, Str::home_step), radio::currentStep(s).label);
         // The step yields to the Mute flag when they would overlap.
@@ -757,6 +824,37 @@ void Ui::drawInfo(Frame& f, const State& s, const Status& st) {
     }
     drawGutter(f, -1, false, s);
     for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
+}
+
+void Ui::syncStation(const Status& st) {
+    if (stationSeq_ == st.rtSeq) return;
+    stationSeq_ = st.rtSeq;
+    stationTop_ = 0;
+}
+
+void Ui::drawStation(Frame& f, const State& s, const Status& st) {
+    drawGutter(f, -1, false, s);
+    if (!st.rdsSync) {
+        gfx::text(f, 10, 0, i18n::tr(s.lang, Str::no_rds));
+        return;
+    }
+    gfx::text(f, 10, 0, st.ps);
+    if (st.pty >= 1 && st.pty <= 31)
+        gfx::textR(f, 128, 0, i18n::tr(s.lang, static_cast<Str>(static_cast<int>(Str::pty_1) + st.pty - 1)));
+    syncStation(st);
+    struct Ctx {
+        Frame& f;
+        int top;
+    } ctx{f, 0};
+    const int rows = wrapText(st.rt, kRtRowW, [](void*, int, const char*) {}, nullptr);
+    ctx.top = clampi(stationTop_, 0, rows - 3 > 0 ? rows - 3 : 0);
+    wrapText(
+        st.rt, kRtRowW,
+        [](void* p, int i, const char* text) {
+            Ctx& c = *static_cast<Ctx*>(p);
+            if (i >= c.top && i < c.top + 3) gfx::text(c.f, 10, 8 + (i - c.top) * 8, text);
+        },
+        &ctx);
 }
 
 void Ui::drawEntry(Frame& f, const State& s) {

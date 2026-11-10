@@ -16,6 +16,8 @@ language list](docs/images/screens.png)
   to 20).
 - The band list holds every broadcast and amateur band from LW to 10 m. Each band remembers its last frequency.
 - Seek runs up and down on FM and AM.
+- On FM it shows the station's RDS name on the home screen, and its programme type and RadioText on a Station
+  screen. The web page adds the traffic flags, the station code and the station's other frequencies.
 - The menus set the step, bandwidth, AGC, display contrast and the light.
 - The side button mutes, steps to the next preset or goes back, as chosen in Settings.
 - The interface comes in 41 languages, each listed under its own name.

@@ -216,6 +216,18 @@ TEST(presets) {
     radio::apply(s, {Cmd::TunePreset, 1}, true);
     CHECK(s.mode == Mode::FM);
     CHECK_EQ(s.hz, 100000000);
+    // Named after the station when one is shown.
+    CHECK(radio::apply(s, {Cmd::SavePreset, 0}, true, "-METRO-"));
+    CHECK_STR(s.presets[s.presetCount - 1].name, "-METRO-");
+    CHECK(radio::apply(s, {Cmd::SavePreset, 0}, true, ""));
+    CHECK_STR(s.presets[s.presetCount - 1].name, "FM");
+    // Ten bytes at most, without cutting a UTF-8 character.
+    radio::presetAdd(s, "ÅÄÖÆØÜ", 100000000, Mode::FM);
+    CHECK_STR(s.presets[s.presetCount - 1].name, "ÅÄÖÆØ");
+    radio::presetAdd(s, "aÅÄÖÆØ", 100000000, Mode::FM);
+    CHECK_STR(s.presets[s.presetCount - 1].name, "aÅÄÖÆ");
+    radio::presetAdd(s, "abcdefgh€", 100000000, Mode::FM);
+    CHECK_STR(s.presets[s.presetCount - 1].name, "abcdefgh");
     while (s.presetCount < radio::kMaxPresets) radio::presetAdd(s, "x", 1000000, Mode::AM);
     CHECK(!radio::apply(s, {Cmd::SavePreset, 0}, true));
 }
