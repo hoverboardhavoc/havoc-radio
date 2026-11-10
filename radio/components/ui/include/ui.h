@@ -33,6 +33,12 @@ struct Status {
     int netCount = 0;
     int battery = 0;         // percent
     const char* version = "";
+    // RDS, in FM: the PS and RadioText as the display draws them ("" when none), the programme type (0 none).
+    bool rdsSync = false;
+    const char* ps = "";
+    const char* rt = "";
+    uint8_t pty = 0;
+    uint8_t rtSeq = 0;       // changes when the RadioText is cleared
 };
 
 struct Output {

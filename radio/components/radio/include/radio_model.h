@@ -97,7 +97,7 @@ enum class Cmd : uint8_t {
     Light,        // v = 0..15
     SideAction,   // v = Side
     Language,     // v = language index
-    SavePreset,   // current frequency, named after the band
+    SavePreset,   // current frequency, named after the station (its RDS PS) or else the band
     TunePreset,   // v = index
     Seek,         // v = +1 / -1
     SeekStop,
@@ -114,7 +114,8 @@ struct Command {
 };
 
 // Applies a state command. Commands that do not change the model (seek, WiFi, install) return false.
-bool apply(State& s, const Command& c, bool ssb);
+// `station` is the station name shown (the RDS PS), "" when there is none.
+bool apply(State& s, const Command& c, bool ssb, const char* station = "");
 
 // Preset editing for the web API.
 bool presetAdd(State& s, const char* name, int32_t hz, Mode m);

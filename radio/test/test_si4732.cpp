@@ -1,4 +1,5 @@
-// The receiver driver's pure checks: the opcode guard, the SSB patch format and the AM command layout.
+// The receiver driver's pure checks: the opcode guard, the SSB patch format, the AM command layout and the RDS
+// status response.
 #include <vector>
 
 #include "radio_model.h"
@@ -26,4 +27,21 @@ TEST(am_command_antcap) {
     // SSB_TUNE_FREQ (USB) and AM_SEEK_START carry it in the same place.
     CHECK(si4732::amCommand(0x40, 0x80, 14200, radio::amAntennaCap(14200)) == (Cmd{0x40, 0x80, 0x37, 0x78, 0, 1}));
     CHECK(si4732::amCommand(0x41, 0x0C, 0, 0x1234) == (Cmd{0x41, 0x0C, 0, 0, 0x12, 0x34}));
+}
+
+TEST(rds_status_response) {
+    // A Metro group as FM_RDS_STATUS returns it: sync, one group in the FIFO, block B with one or two bits
+    // corrected.
+    const uint8_t r[13] = {0x81, 0x01, 0x01, 0x01, 0xF3, 0x95, 0x24, 0x22, 0x72, 0x20, 0x64, 0x65, 0x10};
+    const si4732::RdsStatus s = si4732::rdsStatusOf(r);
+    CHECK(s.sync);
+    CHECK_EQ(s.fifoUsed, 1);
+    CHECK_EQ(s.blk[0], 0xF395);
+    CHECK_EQ(s.blk[1], 0x2422);
+    CHECK_EQ(s.blk[2], 0x7220);
+    CHECK_EQ(s.blk[3], 0x6465);
+    CHECK_EQ(s.ble, 0x10);
+    // FM_RDS_CONFIG: RDSEN, and every block error threshold at 3.
+    CHECK_EQ(si4732::kRdsConfig & 1, 1);
+    for (int b = 0; b < 4; b++) CHECK_EQ(si4732::kRdsConfig >> (14 - 2 * b) & 3, 3);
 }

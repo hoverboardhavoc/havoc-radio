@@ -27,6 +27,24 @@ inline std::array<uint8_t, 6> amCommand(uint8_t op, uint8_t arg1, uint16_t khz, 
 
 enum class Func : uint8_t { FM, AM, SSB };
 
+// FM_RDS_STATUS response: the oldest group in the receiver's FIFO and the synchronisation flag.
+struct RdsStatus {
+    bool sync;         // RDSSYNC
+    uint8_t fifoUsed;  // RDSFIFOUSED; the blocks are a group only when it is above zero
+    uint16_t blk[4];   // blocks A to D
+    uint8_t ble;       // block error levels BLEA..BLED, BLEA in bits 7:6
+};
+
+// Reads the 13 response bytes of FM_RDS_STATUS (status first).
+inline RdsStatus rdsStatusOf(const uint8_t* r) {
+    RdsStatus s;
+    s.sync = r[2] & 0x01;
+    s.fifoUsed = r[3];
+    for (int i = 0; i < 4; i++) s.blk[i] = static_cast<uint16_t>(r[4 + 2 * i] << 8 | r[5 + 2 * i]);
+    s.ble = r[12];
+    return s;
+}
+
 struct TuneStatus {
     uint16_t freq;  // FM: 10 kHz units; AM/SSB: kHz
     uint8_t rssi;   // dBuV
@@ -56,6 +74,11 @@ bool seekDone();  // STCINT set
 bool tuneStatus(bool fm, bool cancel, bool ack, TuneStatus& out);
 bool rsq(bool fm, uint8_t& rssi, uint8_t& snr);
 bool agc(bool fm, bool on);
+// RDS on, after an FM power-up: interrupts on a received group and on sync found or lost, one group per
+// interrupt, and the block error thresholds at 3 so that every block reaches the decoder with its level.
+bool rdsEnable();
+// FM_RDS_STATUS with INTACK; `clear` also empties the FIFO (MTFIFO).
+bool rdsStatus(bool clear, RdsStatus& out);
 
 // AN332 property numbers used by the firmware.
 namespace prop {
@@ -66,6 +89,9 @@ constexpr uint16_t kFmChannelFilter = 0x1102;
 constexpr uint16_t kFmSeekBottom = 0x1400;
 constexpr uint16_t kFmSeekTop = 0x1401;
 constexpr uint16_t kFmSeekSpacing = 0x1402;
+constexpr uint16_t kFmRdsIntSource = 0x1500;
+constexpr uint16_t kFmRdsIntFifoCount = 0x1501;
+constexpr uint16_t kFmRdsConfig = 0x1502;
 constexpr uint16_t kAmChannelFilter = 0x3102;
 constexpr uint16_t kAmAvcMaxGain = 0x3103;  // AM_AUTOMATIC_VOLUME_CONTROL_MAX_GAIN, 340 per dB
 constexpr uint16_t kAmSoftMuteMaxAttenuation = 0x3302;
@@ -75,5 +101,9 @@ constexpr uint16_t kAmSeekSpacing = 0x3402;
 constexpr uint16_t kRxVolume = 0x4000;
 constexpr uint16_t kRxHardMute = 0x4001;
 }  // namespace prop
+
+// Property values for RDS.
+constexpr uint16_t kRdsIntSources = 0x0007;  // RDSRECV, RDSSYNCLOST, RDSSYNCFOUND
+constexpr uint16_t kRdsConfig = 0xFF01;      // BLETHA..BLETHD 3 (accept every block), RDSEN
 
 }  // namespace si4732

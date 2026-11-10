@@ -22,6 +22,7 @@ constexpr uint8_t kFmTuneFreq = 0x20;
 constexpr uint8_t kFmSeekStart = 0x21;
 constexpr uint8_t kFmTuneStatus = 0x22;
 constexpr uint8_t kFmRsqStatus = 0x23;
+constexpr uint8_t kFmRdsStatus = 0x24;
 constexpr uint8_t kFmAgcOverride = 0x28;
 constexpr uint8_t kAmTuneFreq = 0x40;  // SSB_TUNE_FREQ in patch mode
 constexpr uint8_t kAmSeekStart = 0x41;
@@ -185,6 +186,19 @@ bool rsq(bool fm, uint8_t& rssi, uint8_t& snr) {
 bool agc(bool fm, bool on) {
     const uint8_t c[] = {fm ? kFmAgcOverride : kAmAgcOverride, static_cast<uint8_t>(on ? 0 : 1), 0};
     return command(c, sizeof c);
+}
+
+bool rdsEnable() {
+    return setProperty(prop::kFmRdsIntSource, kRdsIntSources) && setProperty(prop::kFmRdsIntFifoCount, 1) &&
+           setProperty(prop::kFmRdsConfig, kRdsConfig);
+}
+
+bool rdsStatus(bool clear, RdsStatus& out) {
+    const uint8_t c[] = {kFmRdsStatus, static_cast<uint8_t>((clear ? 0x02 : 0) | 0x01)};  // MTFIFO, INTACK
+    uint8_t r[13] = {};
+    if (!command(c, sizeof c, r, sizeof r)) return false;
+    out = rdsStatusOf(r);
+    return true;
 }
 
 }  // namespace si4732

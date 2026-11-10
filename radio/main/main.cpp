@@ -28,6 +28,8 @@ constexpr uint32_t kEmptyMessageMs = 3000;
 
 ui::Ui s_ui;
 gfx::Frame s_frame, s_shown;
+rds::Decoder s_rds;
+char s_ps[rds::kPsBuf], s_rt[rds::kRtBuf];
 bool s_netWanted = false;  // the splash has ended: start the network after the next frame
 bool s_netUp = false;
 
@@ -115,6 +117,14 @@ extern "C" void app_main() {
         st.netCount = ni.netCount;
         st.battery = power::percent();
         st.version = kVersion;
+        radio::rdsState(s_rds);
+        s_rds.ps(s_ps, sizeof s_ps, true);
+        s_rds.rt(s_rt, sizeof s_rt, true);
+        st.rdsSync = s_rds.sync();
+        st.ps = s_ps;
+        st.rt = s_rt;
+        st.pty = s_rds.pty();
+        st.rtSeq = s_rds.rtSeq();
 
         radio::snapshot(s);
         for (int i = 0; i < q.n; i++) {

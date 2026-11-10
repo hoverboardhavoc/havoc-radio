@@ -15,7 +15,8 @@ endif()
 
 idf_component_register(SRCS "radio_model.cpp" "radio.cpp"
                        INCLUDE_DIRS "include"
-                       PRIV_REQUIRES board si4732
+                       REQUIRES rds
+                       PRIV_REQUIRES board si4732 esp8266
                        ${embed})
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17 -fno-threadsafe-statics -Wall -Wextra -Werror)
 target_compile_definitions(${COMPONENT_LIB} PRIVATE HAVE_SSB_PATCH=${ssb})
