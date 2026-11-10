@@ -96,8 +96,8 @@ TEST(facet_matches_prototype) {
 
 TEST(icons_match_prototype) {
     const std::string body = jsBlock(prototype(), "const ICONS =");
-    const char* names[] = {"presets", "settings", "volume", "muted"};
-    for (int k = 0; k < 4; k++) {
+    const char* names[] = {"volume", "muted"};
+    for (int k = 0; k < 2; k++) {
         const std::regex re(std::string(names[k]) + R"(\s*:\s*\[([^\]]*)\])");
         std::smatch m;
         CHECK(std::regex_search(body, m, re));

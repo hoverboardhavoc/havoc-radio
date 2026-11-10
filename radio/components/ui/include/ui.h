@@ -178,7 +178,7 @@ private:
     static constexpr int kMaxItems = 48;
     Item items_[kMaxItems];
     int count_ = 0;
-    Gutter gutter_[3];
+    Gutter gutter_[1];
     int gutterCount_ = 0;
     int cur_ = 0;
 };

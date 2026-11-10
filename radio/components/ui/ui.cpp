@@ -303,18 +303,19 @@ void Ui::build(ListId id, const State& s, const Status& st) {
     auto tr = [&](Str k) { return i18n::tr(s.lang, k); };
     switch (id) {
         case ListId::Main: {
+            snprintf(buf, sizeof buf, "%d", s.volume);
+            add(tr(Str::volume), s.muted ? tr(Str::val_mute) : buf, Act::Adjust, static_cast<int>(AdjustId::Volume));
             add(tr(Str::band), radio::bandLabel(s.hz, s.mode), Act::Go, static_cast<int>(ListId::Bands));
+            snprintf(buf, sizeof buf, "%d", s.presetCount);
+            add(tr(Str::presets), buf, Act::Go, static_cast<int>(ListId::Presets));
             add(tr(Str::mode), radio::modeName(s.mode), Act::Go, static_cast<int>(ListId::Modes));
             add(tr(Str::step), radio::currentStep(s).label, Act::Go, static_cast<int>(ListId::Steps));
             add(tr(Str::bandwidth), radio::currentBandwidth(s), Act::Go, static_cast<int>(ListId::Bandwidth));
-            snprintf(buf, sizeof buf, "%d", s.volume);
-            add(tr(Str::volume), s.muted ? tr(Str::val_mute) : buf, Act::Adjust, static_cast<int>(AdjustId::Volume));
             add(tr(Str::seek), "", Act::Go, static_cast<int>(ListId::Seek));
             if (radio::isFm(s.mode)) add(tr(Str::station), "", Act::Station);
-            gutter_[0] = {gfx::Icon::Presets, Act::Go, static_cast<int>(ListId::Presets)};
-            gutter_[1] = {s.muted ? gfx::Icon::Muted : gfx::Icon::Volume, Act::ToggleMute, 0};
-            gutter_[2] = {gfx::Icon::Settings, Act::Go, static_cast<int>(ListId::Settings)};
-            gutterCount_ = 3;
+            add(tr(Str::settings), "", Act::Go, static_cast<int>(ListId::Settings));
+            gutter_[0] = {s.muted ? gfx::Icon::Muted : gfx::Icon::Volume, Act::ToggleMute, 0};
+            gutterCount_ = 1;
             break;
         }
         case ListId::Bands: {

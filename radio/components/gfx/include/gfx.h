@@ -20,7 +20,7 @@ struct Frame {
     void fill(int x, int y, int w, int h, int c);
 };
 
-enum class Icon : uint8_t { Presets, Settings, Volume, Muted };
+enum class Icon : uint8_t { Volume, Muted };
 
 // Decodes one UTF-8 code point and advances s. Returns 0 at the end of the string.
 uint32_t nextCp(const char*& s);

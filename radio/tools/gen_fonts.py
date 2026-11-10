@@ -10,8 +10,8 @@ import json
 import re
 import sys
 
-# Icons the firmware draws. The prototype has more; only these are emitted.
-USED_ICONS = ["presets", "settings", "volume", "muted"]
+# Icons the firmware draws, in gfx::Icon order.
+USED_ICONS = ["volume", "muted"]
 
 
 def block(src, start):

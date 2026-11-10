@@ -62,6 +62,7 @@ render
 
 scenario home_fm
 press
+turn 1
 press
 turn -9
 press
@@ -71,6 +72,7 @@ render tuned
 
 scenario home_mw
 press
+turn 1
 press
 turn -7
 press
@@ -78,12 +80,13 @@ render
 
 scenario home_ssb
 press
+turn 1
 press
 turn 1
 press
 render
 press
-turn 2
+turn 4
 press
 turn -2
 press
@@ -92,7 +95,7 @@ render fine
 
 scenario home_seek
 press
-turn 5
+turn -4
 press
 press
 render
@@ -101,7 +104,7 @@ render stopped
 
 scenario home_seek_down
 press
-turn 5
+turn -4
 press
 turn 1
 press
@@ -112,8 +115,6 @@ press
 render
 turn -1
 render back
-turn -1
-render presets
 turn -1
 render mute
 turn -1
@@ -133,12 +134,14 @@ press
 
 scenario long_goes_home
 press
+turn 1
 press
 long
 render
 
 scenario bands
 press
+turn 1
 press
 render
 turn -9
@@ -152,7 +155,7 @@ render back
 
 scenario modes
 press
-turn 1
+turn 3
 press
 render
 set ssb 0
@@ -160,17 +163,18 @@ render nossb
 
 scenario modes_fm
 press
+turn 1
 press
 turn -9
 press
 press
-turn 1
+turn 3
 press
 render
 
 scenario presets
 press
-turn -2
+turn 2
 press
 render
 turn 1
@@ -179,7 +183,7 @@ render tuned
 
 scenario steps
 press
-turn 2
+turn 4
 press
 render
 turn 2
@@ -188,28 +192,28 @@ render chosen
 
 scenario bandwidth
 press
-turn 3
+turn 5
 press
 render
 press
 press
+turn 1
 press
 turn -9
 press
 press
-turn 3
+turn 5
 press
 render fm
 
 scenario seek_list
 press
-turn 5
+turn -4
 press
 render
 
 scenario volume
 press
-turn 4
 press
 render
 turn -4
@@ -219,7 +223,7 @@ render home
 
 scenario settings
 press
-turn -4
+turn -3
 press
 render
 turn 7
@@ -231,7 +235,7 @@ render back
 
 scenario contrast
 press
-turn -4
+turn -3
 press
 turn 2
 press
@@ -243,7 +247,7 @@ render back
 
 scenario light
 press
-turn -4
+turn -3
 press
 turn 3
 press
@@ -255,7 +259,7 @@ render back
 
 scenario agc
 press
-turn -4
+turn -3
 press
 turn 1
 press
@@ -263,7 +267,7 @@ render
 
 scenario side_setting
 press
-turn -4
+turn -3
 press
 turn 4
 press
@@ -279,7 +283,7 @@ render next2
 
 scenario side_back
 press
-turn -4
+turn -3
 press
 turn 4
 press
@@ -287,6 +291,7 @@ turn 2
 press
 long
 press
+turn 1
 press
 render
 side
@@ -296,7 +301,7 @@ render home
 
 scenario wifi
 press
-turn -4
+turn -3
 press
 press
 render
@@ -309,7 +314,7 @@ render net
 scenario wifi_off
 set wifi off
 press
-turn -4
+turn -3
 press
 render settings
 press
@@ -320,7 +325,7 @@ render info
 scenario about_ap
 set wifi off
 press
-turn -4
+turn -3
 press
 turn 7
 press
@@ -328,7 +333,7 @@ render
 
 scenario entry
 press
-turn -4
+turn -3
 press
 press
 turn 2
@@ -360,7 +365,7 @@ render wrapped
 
 scenario entry_long
 press
-turn -4
+turn -3
 press
 press
 turn 2
@@ -407,7 +412,7 @@ render joined
 
 scenario entry_cancel
 press
-turn -4
+turn -3
 press
 press
 turn 1
@@ -442,7 +447,7 @@ render ignored
 
 scenario language
 press
-turn -4
+turn -3
 press
 turn 6
 render setting
@@ -459,7 +464,7 @@ side
 @5000 render muted
 press
 render menu
-turn -4
+turn -3
 press
 render settings
 turn 7
@@ -469,7 +474,7 @@ render about
 scenario lang_entry
 set lang fr
 press
-turn -4
+turn -3
 press
 press
 turn 2
@@ -490,6 +495,7 @@ render cancelled
 # RDS on FM, 99.5 MHz.
 scenario rds_home
 press
+turn 1
 press
 turn -9
 press
@@ -508,7 +514,7 @@ side
 long
 render preset_toast
 press
-turn -2
+turn 2
 press
 hold 10
 render presets
@@ -520,18 +526,20 @@ render
 
 scenario rds_menu
 press
+turn 1
 press
 turn -9
 press
 press
 render
-turn 6
+turn -4
 render station
 turn 1
 render back
 
 scenario rds_station
 press
+turn 1
 press
 turn -9
 press
@@ -541,7 +549,7 @@ rds pty 1
 rds ps -METRO-
 rds rt Metro gir deg snart mer variert musikk
 press
-turn 6
+turn -4
 press
 render
 turn 1
@@ -552,6 +560,7 @@ render pressed
 
 scenario rds_station_long
 press
+turn 1
 press
 turn -9
 press
@@ -560,7 +569,7 @@ rds pty 10
 rds ps RADIO 10
 rds rt MUMFORD & SONS: THE WOLF. SE WWW.RADIOMETRO.NO/SPILLELISTE-IDAG!
 press
-turn 6
+turn -4
 press
 render
 turn 1
@@ -579,6 +588,7 @@ render home
 
 scenario rds_station_lang
 press
+turn 1
 press
 turn -9
 press
@@ -588,7 +598,7 @@ rds ps ÆÆÆÆÆÆÆÆ
 rds rt Metro gir deg snart mer variert musikk
 set lang hu
 press
-turn 6
+turn -4
 press
 render hu
 set lang ga
@@ -614,6 +624,7 @@ render
 scenario time_home_fm
 ntp 13:05
 press
+turn 1
 press
 turn -9
 press
@@ -628,17 +639,18 @@ side
 scenario time_home_ssb
 ntp 13:05
 press
+turn 1
 press
 turn 6
 press
 press
-turn 2
+turn 4
 press
 turn -2
 press
 render
 press
-turn 2
+turn 4
 press
 turn 1
 press
@@ -647,7 +659,7 @@ render 100hz
 scenario time_settings
 ntp 12:53
 @723000 press
-turn -4
+turn -3
 press
 turn 5
 render
@@ -668,7 +680,7 @@ render on
 scenario time_hours
 ntp 09:30
 @10803000 press
-turn -4
+turn -3
 press
 turn 5
 press
@@ -676,7 +688,7 @@ render
 
 scenario time_never
 press
-turn -4
+turn -3
 press
 turn 5
 render
@@ -688,7 +700,7 @@ render off
 scenario time_server_long
 set server ntp1.stratum-two.time-servers.example.org
 press
-turn -4
+turn -3
 press
 turn 5
 press
@@ -700,7 +712,7 @@ render entry
 
 scenario time_server_entry
 press
-turn -4
+turn -3
 press
 turn 5
 press
@@ -765,7 +777,7 @@ render default
 scenario time_about
 ntp 13:05
 press
-turn -4
+turn -3
 press
 turn 7
 press
@@ -775,7 +787,7 @@ scenario time_lang
 ntp 12:53
 set lang hu
 @723000 press
-turn -4
+turn -3
 press
 turn 5
 render settings
@@ -787,7 +799,7 @@ render entry
 long
 set lang ga
 press
-turn -4
+turn -3
 press
 turn 7
 press

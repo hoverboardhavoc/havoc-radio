@@ -139,24 +139,36 @@ During a seek the top row shows the band and `Seek ▶` (up) or `Seek ◀` (down
 
 ## The main menu
 
-Press the wheel on the home screen to open the main menu.
+Press the wheel on the home screen to open the main menu. It opens with Volume selected, so a second press opens the
+volume screen.
 
-![The main menu: Band 49m, Mode AM, Step 5k, Bandwidth 4.0k, with icons at the left](images/guide/menu_main.png)
+![The main menu: Volume 45 (selected), Band 49m, Presets 5, Mode AM, with Back and the speaker at the left](images/guide/menu_main.png)
 
 The screen shows four rows at a time. The selected row is inverted. The current value of each entry is at the right.
-A dotted bar at the right edge shows that the list holds more entries than fit. The main menu holds Band, Mode, Step,
-Bandwidth, Volume and Seek. On FM it also holds Station, after Seek.
+A dotted bar at the right edge shows that the list holds more entries than fit. The main menu holds, in order:
 
-The narrow column at the left edge holds icons that can be selected:
+| Entry | Value shown | Press it to |
+|---|---|---|
+| Volume | the volume from 0 to 63, or `mute` | set the volume. See [Volume](#volume). |
+| Band | the band, for example `49m`, or `SW` outside a named band | choose a band. See [Band](#band). |
+| Presets | the number of saved presets | open the preset list. See [Presets](#presets). |
+| Mode | `AM`, `LSB`, `USB` or `FM` | choose the mode. See [Mode](#mode). |
+| Step | the tuning step | choose the step. See [Step](#step). |
+| Bandwidth | the filter bandwidth | choose the bandwidth. See [Bandwidth](#bandwidth). |
+| Seek | none | search for a station. See [Seek](#seek). |
+| Station | none | show the station's RDS. Only on FM. See [Station (RDS)](#station-rds). |
+| Settings | none | open Settings. See [Settings](#settings). |
+
+![The end of the main menu: Step, Bandwidth, Seek and Settings (selected)](images/guide/menu_main_settings.png)
+
+The narrow column at the left edge holds two controls that can be selected:
 
 | Icon | Name | Press it to |
 |---|---|---|
 | `◀` | Back | return to the previous screen. On the main menu it returns to the home screen. |
-| star | Presets | open the preset list. See [Presets](#presets). |
 | speaker | Mute | mute or unmute. The menu stays open. The speaker is crossed out while muted. |
-| gear | Settings | open Settings. See [Settings](#settings). |
 
-![The Presets icon selected in the left column](images/guide/menu_main_presets.png)
+![Mute selected in the left column, below Back](images/guide/menu_main_mute.png)
 
 ![Muted from the menu: the crossed-out speaker; Volume reads mute](images/guide/menu_main_muted.png)
 
@@ -166,13 +178,24 @@ These rules hold in every list.
 
 - The selection travels round the screen in one loop. Turning clockwise moves down the entries. After the last entry
   the selection moves to the lowest icon in the left column, then up the column to Back, then to the first entry.
-  Turning anticlockwise goes the other way, so one click up from the first entry selects Back.
+  Turning anticlockwise goes the other way, so one click up from the first entry selects Back. On the main menu the
+  loop runs from Settings to Mute, then Back, then Volume.
 - Hold + turn jumps four entries. It stops at the first and the last entry.
 - A list opens with the current value selected.
 - Choosing a band, mode, preset, step or bandwidth returns to the home screen.
 - A long press returns to the home screen from any menu.
 - After 8 s without input the K-Radio returns to the home screen. Text entry, the Station screen and the firmware
   update screen do not time out.
+
+### Volume
+
+![The volume screen: Volume, a bar, 45/63](images/guide/volume.png)
+
+The volume screen shows a bar and the value out of 63. Turn the wheel to change the volume; it changes as the wheel
+turns. Press the wheel to return to the home screen. A change of volume turns mute off. While the K-Radio is muted,
+the main menu shows `mute` as the volume.
+
+Hold + turn on the home screen sets the volume without opening the menu.
 
 ### Band
 
@@ -235,16 +258,6 @@ own bandwidth.
 | AM | `1.0k`, `1.8k`, `2.0k`, `2.5k`, `3.0k`, `4.0k`, `6.0k` |
 | LSB, USB | `0.5k`, `1.0k`, `1.2k`, `2.2k`, `3.0k`, `4.0k` |
 
-### Volume
-
-![The volume screen: Volume, a bar, 45/63](images/guide/volume.png)
-
-The volume screen shows a bar and the value out of 63. Turn the wheel to change the volume; it changes as the wheel
-turns. Press the wheel to return to the home screen. A change of volume turns mute off. While the K-Radio is muted,
-the main menu shows `mute` as the volume.
-
-Hold + turn on the home screen sets the volume without opening the menu.
-
 ### Seek
 
 ![The seek list: Seek up, Seek down](images/guide/seek_list.png)
@@ -265,7 +278,7 @@ programme on its own because of RDS.
 
 Open the main menu on FM, select `Station` and press.
 
-![The main menu on FM: Bandwidth, Volume, Seek and Station (selected)](images/guide/rds_menu_station.png)
+![The main menu on FM: Step, Bandwidth, Seek and Station (selected)](images/guide/rds_menu_station.png)
 
 The top row shows the station's name at the left and the programme type at the right, for example `News`, `Pop
 music` or `Weather`. The rows below show the RadioText, broken into lines at the spaces. When the text needs more than
@@ -295,7 +308,8 @@ shows `Presets full` and saves nothing.
 
 ### Choosing a preset
 
-Open the main menu, select the star in the left column and press.
+Open the main menu, select `Presets` and press. The main menu shows the number of saved presets at the right. With no
+presets saved the list is empty and opens with Back selected.
 
 ![The preset list: 2 RWM 9996k, 3 Ch 292 6070k (selected), 4 40m 7100k, 5 FM 100.7M](images/guide/presets.png)
 
@@ -318,7 +332,8 @@ also save the current frequency under a name of choice.
 
 ## Settings
 
-Open the main menu, select the gear in the left column and press.
+Open the main menu, select `Settings`, its last entry, and press. From Volume, three clicks anticlockwise, past Back
+and Mute, select it.
 
 ![Settings, first part: WiFi Lab, AGC on, Contrast 15, Light off](images/guide/settings.png)
 
@@ -449,7 +464,7 @@ Cymraeg and Esperanto.
 Choosing a language changes the K-Radio and the web page at once. The K-Radio returns to Settings. Units, band names
 and mode names read the same in every language. Some translations use short forms to fit the screen.
 
-![The main menu in Czech: Pásmo, Režim, Krok, Šířka pásma](images/guide/lang_home_menu.png)
+![The main menu in Czech: Hlasitost ztlumit (selected), Pásmo, Předvolby, Režim](images/guide/lang_home_menu.png)
 
 ### About
 
