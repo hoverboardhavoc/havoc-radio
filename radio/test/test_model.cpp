@@ -187,11 +187,28 @@ TEST(volume_and_settings) {
     CHECK(!s.muted);
     radio::apply(s, {Cmd::Contrast, 0}, true);
     CHECK_EQ(s.contrast, 1);
+}
+
+TEST(light_level) {
+    radio::State s;
+    radio::defaults(s);
+    CHECK_EQ(s.light, 15);
+    CHECK(radio::apply(s, {Cmd::Light, 0}, true));
+    CHECK_EQ(s.light, 1);
     radio::apply(s, {Cmd::Light, 99}, true);
     CHECK_EQ(s.light, 15);
-    CHECK(!radio::apply(s, {Cmd::SideAction, 3}, true));
-    CHECK(radio::apply(s, {Cmd::SideAction, 2}, true));
-    CHECK(s.side == radio::Side::Back);
+    // The lamp's on, off and SOS are not part of the state.
+    CHECK(!radio::apply(s, {Cmd::Lamp, static_cast<int>(radio::Lamp::On)}, true));
+    // A stored 0 (off, from an older version) loads as 15; a stored level is kept.
+    s.light = 0;
+    radio::repair(s);
+    CHECK_EQ(s.light, 15);
+    s.light = 16;
+    radio::repair(s);
+    CHECK_EQ(s.light, 15);
+    s.light = 6;
+    radio::repair(s);
+    CHECK_EQ(s.light, 6);
 }
 
 TEST(presets) {

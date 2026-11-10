@@ -67,6 +67,7 @@ struct Sim {
                     st.seekDir = static_cast<int8_t>(c.v);
                     break;
                 case radio::Cmd::SeekStop: st.seeking = false; break;
+                case radio::Cmd::Lamp: st.lamp = static_cast<radio::Lamp>(c.v); break;
                 case radio::Cmd::NtpServer: radio::setNtpServer(s, ui.serverText()); break;
                 case radio::Cmd::Join:
                     std::strncpy(ssid, ui.joinSsid(), sizeof ssid - 1);

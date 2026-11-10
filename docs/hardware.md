@@ -52,7 +52,7 @@ From the front silkscreen:
 | Amplifier mute | GPIO0, high = muted | LM4863 shutdown. Boot strap pin; high at boot, so the amplifier starts muted |
 | Encoder | A GPIO14, B GPIO13, push GPIO12 | Active low |
 | Side button | GPIO3 (UART0 RX), active low | Labelled 返回/点灯 (back / lamp). Using it gives up UART0 receive; the log uses UART0 transmit (GPIO1). |
-| LED | GPIO15, red | Boot strap pin; low at boot |
+| Lamp | GPIO15, PWM | The six white LEDs on the back. Boot strap pin; low at boot |
 | Battery | A0 | Through a divider from the IP5306 battery rail. Raw below 750 is empty; 850 to 990 is empty to full. |
 | Power | IP5306 charger and boost, slide switch | The USB-C port has no data lines to the ESP8266 |
 | Audio | LM4863 to the speaker and the 3.5 mm jack | A slide switch (外放开关) turns the speaker off |

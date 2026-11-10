@@ -109,13 +109,9 @@ TEST(strings_fit_slots) {
         c.row(c.tr(Str::wifi), c.tr(Str::not_joined));
         c.row(c.tr(Str::agc), widest({c.tr(Str::on), c.tr(Str::off)}));
         c.row(c.tr(Str::contrast), "15");
-        c.row(c.tr(Str::light), widest({c.tr(Str::off), "15"}));
-        c.row(c.tr(Str::side_button), widest({c.tr(Str::val_mute), c.tr(Str::val_preset), c.tr(Str::val_back)}));
+        c.row(c.tr(Str::light), widest({c.tr(Str::off), "15", "SOS"}));
         c.row(c.tr(Str::language), i18n::kLangName[l]);
         c.row(c.tr(Str::about), "");
-        c.row(c.tr(Str::side_mute), "");
-        c.row(c.tr(Str::side_next), "");
-        c.row(c.tr(Str::side_back), "");
         c.row(i18n::kLangName[l], "");
         // Home top row: band, mode and step end before the signal bars; the Mute flag at x = 80 grows with
         // its text and stays clear of the bars at x = 108.
@@ -125,9 +121,7 @@ TEST(strings_fit_slots) {
         c.fit("Mute flag", w(c.tr(Str::home_mute)), 24);
         c.fit("seek row", w(std::string("160m  ") + c.tr(Str::seek) + " ▶"), 106);
         // Toasts, from x = 1.
-        for (const std::string& s : {fmt(c.tr(Str::toast_muted)), fmt(c.tr(Str::toast_sound)),
-                                     fmt(c.tr(Str::toast_saved), 20), fmt(c.tr(Str::toast_full)),
-                                     fmt(c.tr(Str::toast_none)), fmt(c.tr(Str::toast_preset), 20, "160m"),
+        for (const std::string& s : {fmt(c.tr(Str::toast_saved), 20), fmt(c.tr(Str::toast_full)),
                                      fmt(c.tr(Str::toast_joining), "Telenor-5G"), fmt(c.tr(Str::toast_no_seek)),
                                      fmt(c.tr(Str::toast_cancelled))})
             c.fit("toast '" + s + "'", w(s), 126);
@@ -135,9 +129,15 @@ TEST(strings_fit_slots) {
         for (const std::string& s : {fmt(c.tr(Str::joined_s), "Telenor-5G"), fmt(c.tr(Str::not_joined_cap)),
                                      fmt(c.tr(Str::access_point)), fmt(c.tr(Str::battery_d), 100),
                                      fmt(c.tr(Str::volume)), fmt(c.tr(Str::contrast)), fmt(c.tr(Str::light)),
+                                     fmt(c.tr(Str::light_sos)),
                                      fmt(c.tr(Str::confirm_title)), fmt(c.tr(Str::confirm_press)),
                                      fmt(c.tr(Str::confirm_long))})
             c.fit("line '" + s + "'", w(s), 117);
+        // The lamp screen: what the next press does, from x = 10 at the bottom, 3 px clear of the level at the right.
+        // SOS stays in Latin letters.
+        for (Str k : {Str::press_sos, Str::press_off})
+            c.fit(std::string("lamp '") + c.tr(k) + "'", 10 + w(c.tr(k)) + 3 + w("15/15"), 128);
+        CHECK(std::strstr(c.tr(Str::light_sos), "SOS") && std::strstr(c.tr(Str::press_sos), "SOS"));
         // Text entry title with the character group at the right.
         const std::string title = fmt(c.tr(Str::password_for), "Telenor-5G");
         c.fit("entry title", w(title) + 3 + w(widest({"abc", "ABC", "123", "#+=", c.tr(Str::group_edit)})), 128);

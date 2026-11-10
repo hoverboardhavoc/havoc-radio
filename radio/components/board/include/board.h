@@ -12,7 +12,7 @@ constexpr int kEncA = 14;
 constexpr int kEncB = 13;
 constexpr int kEncPush = 12;
 constexpr int kSide = 3;      // UART0 RX, used as an input
-constexpr int kLed = 15;      // boot strap, must be low at boot
+constexpr int kLamp = 15;     // the lamp on the back (PWM); boot strap, must be low at boot
 
 constexpr uint8_t kSi4732Addr = 0x11;
 constexpr uint8_t kSsd1306Addr = 0x3C;
@@ -25,11 +25,11 @@ constexpr int kBatteryEmptyRaw = 750;
 constexpr int kBatteryLowRaw = 850;
 constexpr int kBatteryFullRaw = 990;
 
-// Configures every pin without glitching the boot straps: amplifier muted, receiver reset released, LED off.
+// Configures every pin without glitching the boot straps: amplifier muted, receiver reset released, lamp off.
 void init();
 void ampMute(bool muted);
 void siReset();   // pulse the receiver's reset line
-void led(int level);  // 0 (off) .. 15
+void lamp(int level);  // 0 (off) .. 15; only the lamp module calls it
 bool knobDown();
 bool sideDown();
 uint8_t encoderAB();  // A in bit 1, B in bit 0, 1 = high

@@ -12,6 +12,7 @@
 #include "i18n_strings.h"
 #include "i2c_bus.h"
 #include "input.h"
+#include "lamp.h"
 #include "net.h"
 #include "power.h"
 #include "radio.h"
@@ -47,6 +48,7 @@ void handle(const ui::Output& out) {
             case radio::Cmd::Install: web::decide(true); break;
             case radio::Cmd::CancelInstall: web::decide(false); break;
             case radio::Cmd::SplashEnd: s_netWanted = true; break;
+            case radio::Cmd::Lamp: lamp::setMode(static_cast<radio::Lamp>(c.v)); break;
             case radio::Cmd::NtpServer:
                 if (radio::edit([](radio::State& st, void* p) { return radio::setNtpServer(st, static_cast<const char*>(p)); },
                                 const_cast<char*>(s_ui.serverText())))
@@ -66,14 +68,14 @@ void show(bool force) {
     }
 }
 
-// Battery empty: say so, then mute, power the receiver down, turn the LED off and sleep with no wake source.
+// Battery empty: say so, then mute, power the receiver down, turn the lamp off and sleep with no wake source.
 // The slide switch restarts the radio.
 [[noreturn]] void powerOff(const radio::State& s, const ui::Status& st) {
     s_ui.message(i18n::tr(s.lang, i18n::Str::battery_empty));
     s_ui.render(s_frame, millis(), s, st);
     show(true);
     radio::shutdown();
-    board::led(0);
+    lamp::setMode(radio::Lamp::Off);
     vTaskDelay(pdMS_TO_TICKS(kEmptyMessageMs));
     ssd1306::display(false);
     esp_wifi_stop();
@@ -93,7 +95,7 @@ extern "C" void app_main() {
     radio::defaults(s);
     store::loadState(s);
     ssd1306::contrast(contrastRegister(s.contrast));
-    board::led(s.light);
+    lamp::start(s.light);
     int contrast = s.contrast, light = s.light;
 
     radio::start(s);
@@ -135,6 +137,7 @@ extern "C" void app_main() {
         const clk::Now clock = clk::now();
         st.utcMs = clock.utcMs;
         st.syncAgeMs = clock.syncAgeMs;
+        st.lamp = lamp::mode();
 
         radio::snapshot(s);
         for (int i = 0; i < q.n; i++) {
@@ -142,6 +145,7 @@ extern "C" void app_main() {
             s_ui.event(q.ev[i], now, s, st, out);
             handle(out);
             radio::snapshot(s);
+            st.lamp = lamp::mode();
         }
         ui::Output out;
         s_ui.tick(now, s, st, out);
@@ -150,7 +154,7 @@ extern "C" void app_main() {
         if (power::empty()) powerOff(s, st);
 
         if (s.contrast != contrast) ssd1306::contrast(contrastRegister(contrast = s.contrast));
-        if (s.light != light) board::led(light = s.light);
+        if (s.light != light) lamp::setLevel(light = s.light);
 
         if (s_netWanted || now - lastFrame >= kFrameMs) {
             lastFrame = now;

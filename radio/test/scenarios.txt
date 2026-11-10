@@ -5,7 +5,8 @@
 #   scenario NAME
 #   [@T] OP [ARGS]     T in ms since power-on; without @T a line runs 100 ms after the previous one,
 #                      and the first line of a scenario runs at 3000 ms.
-#   OPs: turn N | hold N | press | long | side | render [LABEL]
+#   OPs: turn N | hold N | press | long | side | sidehold | render [LABEL]
+#        (side is a short press of the side button, sidehold its 1 s hold)
 #        set bars N | set ssb 0|1 | set wifi off | set lang CODE | ota | empty
 #        rds sync 0|1 | rds pty N | rds ps TEXT | rds rt TEXT | rds ab   (RDS as the decoder hands it to the
 #        UI: PS and RadioText in display form; ab is an A/B flag change, which clears the RadioText)
@@ -49,12 +50,13 @@ hold 3
 render
 @5000 render after
 
+# Muted from the main menu: the Mute flag on home.
 scenario home_mute
-side
-render toast
+press
+turn -2
+press
+long
 @5000 render flag
-side
-render sound
 
 scenario home_preset_save
 long
@@ -226,7 +228,7 @@ press
 turn -3
 press
 render
-turn 7
+turn 6
 render about
 press
 render info
@@ -245,17 +247,76 @@ render lower
 press
 render back
 
+# Settings > Light: the value off, the lamp screen (which turns the lamp on), the level, SOS.
 scenario light
 press
 turn -3
 press
 turn 3
+render off
 press
 render
-turn 6
-render on
-press
+turn -6
+render lower
+side
 render back
+press
+press
+render sos
+side
+render back_sos
+
+# The side button held on home: the lamp on with the lamp screen; a press for SOS, and the hold turns it off.
+scenario lamp
+sidehold
+render
+turn -9
+render lower
+press
+render sos
+sidehold
+render off
+sidehold
+render again
+
+# The lamp screen closes after 8 s; the lamp stays on.
+scenario lamp_timeout
+sidehold
+@11000 render
+@11200 render later
+press
+turn -3
+press
+turn 3
+render settings
+
+# The hold in a list opens the lamp screen over it; Back returns to the list. The knob press to off closes it.
+scenario lamp_list
+press
+turn 1
+press
+sidehold
+render
+side
+render back
+sidehold
+render off
+sidehold
+press
+press
+render closed
+
+# The hold is ignored on the splash, a message and the confirm screen.
+scenario lamp_ignored
+@500 sidehold
+@600 render splash
+@3000 ota
+sidehold
+render confirm
+long
+empty
+sidehold
+render message
 
 scenario agc
 press
@@ -265,31 +326,8 @@ turn 1
 press
 render
 
-scenario side_setting
-press
-turn -3
-press
-turn 4
-press
-render
-turn 1
-press
-render chosen
-long
-side
-render next
-side
-render next2
-
+# A short press of the side button is Back.
 scenario side_back
-press
-turn -3
-press
-turn 4
-press
-turn 2
-press
-long
 press
 turn 1
 press
@@ -327,7 +365,7 @@ set wifi off
 press
 turn -3
 press
-turn 7
+turn 6
 press
 render
 
@@ -449,7 +487,7 @@ scenario language
 press
 turn -3
 press
-turn 6
+turn 5
 render setting
 press
 render list
@@ -460,14 +498,17 @@ render german
 
 scenario lang_home
 set lang cs
-side
+press
+turn -2
+press
+long
 @5000 render muted
 press
 render menu
 turn -3
 press
 render settings
-turn 7
+turn 6
 press
 render about
 
@@ -507,9 +548,15 @@ rds rt Metro gir deg snart mer variert musikk
 render
 rds ps RADIO 10
 render ps8
-side
+press
+turn -2
+press
+long
 @6000 render muted
-side
+press
+turn -2
+press
+long
 @8000 render sound
 long
 render preset_toast
@@ -632,7 +679,10 @@ turn -12
 rds sync 1
 rds ps -METRO-
 render
-side
+press
+turn -2
+press
+long
 @6000 render muted
 
 # SSB with a 10 Hz step above 10 MHz: the frequency leaves no room for the time.
@@ -661,7 +711,7 @@ ntp 12:53
 @723000 press
 turn -3
 press
-turn 5
+turn 4
 render
 press
 render list
@@ -682,7 +732,7 @@ ntp 09:30
 @10803000 press
 turn -3
 press
-turn 5
+turn 4
 press
 render
 
@@ -690,7 +740,7 @@ scenario time_never
 press
 turn -3
 press
-turn 5
+turn 4
 render
 press
 render list
@@ -702,7 +752,7 @@ set server ntp1.stratum-two.time-servers.example.org
 press
 turn -3
 press
-turn 5
+turn 4
 press
 render
 turn 1
@@ -714,7 +764,7 @@ scenario time_server_entry
 press
 turn -3
 press
-turn 5
+turn 4
 press
 turn 1
 press
@@ -779,7 +829,7 @@ ntp 13:05
 press
 turn -3
 press
-turn 7
+turn 6
 press
 render
 
@@ -789,7 +839,7 @@ set lang hu
 @723000 press
 turn -3
 press
-turn 5
+turn 4
 render settings
 press
 render list
@@ -801,6 +851,16 @@ set lang ga
 press
 turn -3
 press
-turn 7
+turn 6
 press
 render about
+
+# The lamp screen in long languages.
+scenario lang_lamp
+set lang lt
+sidehold
+render lt
+press
+render lt_sos
+set lang hu
+render hu_sos

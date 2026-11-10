@@ -124,11 +124,40 @@ TEST(hold_turn_suppresses_press_and_long) {
     CHECK(r.got.back().type == ui::EventType::Turn && r.got.back().n == -1);
 }
 
-TEST(side_button) {
+TEST(side_button_short_press) {
+    // Reported on the release, before 1 s.
     Rig r;
     r.run(50, false);
-    r.run(100, false, true);
+    r.run(900, false, true);
+    CHECK(r.got.empty());
     r.run(100, false, false);
     CHECK_EQ(r.got.size(), 1u);
     CHECK(r.got[0].type == ui::EventType::Side);
+}
+
+TEST(side_button_hold) {
+    // The hold acts at 1 s while still held (the press is debounced for 20 ms first); the release does nothing.
+    Rig r;
+    r.run(50, false);
+    r.run(1015, false, true);
+    CHECK(r.got.empty());
+    r.run(10, false, true);
+    CHECK_EQ(r.got.size(), 1u);
+    CHECK(r.got[0].type == ui::EventType::SideHold);
+    r.run(2000, false, true);
+    r.run(100, false, false);
+    CHECK_EQ(r.got.size(), 1u);
+    // The next short press is reported again.
+    r.run(100, false, true);
+    r.run(100, false, false);
+    CHECK_EQ(r.got.size(), 2u);
+    CHECK(r.got[1].type == ui::EventType::Side);
+}
+
+TEST(side_button_bounce_filtered) {
+    Rig r;
+    r.run(50, false);
+    for (int i = 0; i < 3; i++) r.run(5, false, true), r.run(5, false, false);
+    r.run(100, false);
+    CHECK(r.got.empty());
 }

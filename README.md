@@ -18,8 +18,9 @@ language list](docs/images/screens.png)
 - Seek runs up and down on FM and AM.
 - On FM it shows the station's RDS name on the home screen, and its programme type and RadioText on a Station
   screen. The web page adds the traffic flags, the station code and the station's other frequencies.
-- The menus set the step, bandwidth, AGC, display contrast and the light.
-- The side button mutes, steps to the next preset or goes back, as chosen in Settings.
+- The menus set the step, bandwidth, AGC and display contrast.
+- The side button goes back. Held for 1 s it turns the lamp on the back on or off; the lamp screen sets its level
+  and flashes SOS in Morse code.
 - The interface comes in 41 languages, each listed under its own name.
 - A web page on the local network shows the frequency and signal live, tunes the radio, edits presets, sets up
   WiFi and uploads firmware. A new firmware only installs after a press of the knob on the radio.

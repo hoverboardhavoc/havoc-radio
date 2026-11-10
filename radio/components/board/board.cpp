@@ -19,14 +19,14 @@ void init() {
     // Outputs first, at their boot levels, so the straps never see a different level.
     gpio_set_level(static_cast<gpio_num_t>(kAmpMute), 1);
     gpio_set_level(static_cast<gpio_num_t>(kSiReset), 1);
-    gpio_set_level(static_cast<gpio_num_t>(kLed), 0);
+    gpio_set_level(static_cast<gpio_num_t>(kLamp), 0);
     gpio_config_t out = {};
-    out.pin_bit_mask = (1ULL << kAmpMute) | (1ULL << kSiReset) | (1ULL << kLed);
+    out.pin_bit_mask = (1ULL << kAmpMute) | (1ULL << kSiReset) | (1ULL << kLamp);
     out.mode = GPIO_MODE_OUTPUT;
     gpio_config(&out);
     gpio_set_level(static_cast<gpio_num_t>(kAmpMute), 1);
     gpio_set_level(static_cast<gpio_num_t>(kSiReset), 1);
-    gpio_set_level(static_cast<gpio_num_t>(kLed), 0);
+    gpio_set_level(static_cast<gpio_num_t>(kLamp), 0);
 
     // The side button takes over UART0 RX; the log keeps UART0 TX.
     PIN_FUNC_SELECT(PERIPHS_IO_MUX_U0RXD_U, FUNC_GPIO3);
@@ -46,13 +46,13 @@ void siReset() {
     vTaskDelay(pdMS_TO_TICKS(10));
 }
 
-void led(int level) {
+void lamp(int level) {
     if (level < 0) level = 0;
     if (level > 15) level = 15;
     const uint32_t duty = static_cast<uint32_t>(level * level) * kPwmPeriodUs / 225;
     if (!s_pwm) {
         if (!duty) return;
-        const uint32_t pins[1] = {static_cast<uint32_t>(kLed)};
+        const uint32_t pins[1] = {static_cast<uint32_t>(kLamp)};
         uint32_t duties[1] = {duty};
         pwm_init(kPwmPeriodUs, duties, 1, pins);
         pwm_start();
@@ -63,8 +63,8 @@ void led(int level) {
         pwm_stop(0);
         pwm_deinit();
         s_pwm = false;
-        gpio_set_direction(static_cast<gpio_num_t>(kLed), GPIO_MODE_OUTPUT);
-        gpio_set_level(static_cast<gpio_num_t>(kLed), 0);
+        gpio_set_direction(static_cast<gpio_num_t>(kLamp), GPIO_MODE_OUTPUT);
+        gpio_set_level(static_cast<gpio_num_t>(kLamp), 0);
         return;
     }
     pwm_set_duty(0, duty);

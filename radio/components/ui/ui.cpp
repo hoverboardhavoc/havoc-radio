@@ -89,15 +89,6 @@ void barsText(int n, char* out) {
     out[3] = 0;
 }
 
-Str sideName(radio::Side s) {
-    switch (s) {
-        case radio::Side::Mute: return Str::val_mute;
-        case radio::Side::NextPreset: return Str::val_preset;
-        case radio::Side::Back: break;
-    }
-    return Str::val_back;
-}
-
 // ---- splash: the wheel ----
 const double kTongues[5][2] = {{-0.6, 6}, {-0.15, 10}, {0.3, 12}, {0.75, 10}, {1.2, 7}};
 constexpr int kWheelCy = 16;
@@ -394,8 +385,8 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             snprintf(buf, sizeof buf, "%d", s.contrast);
             add(tr(Str::contrast), buf, Act::Adjust, static_cast<int>(AdjustId::Contrast));
             snprintf(buf, sizeof buf, "%d", s.light);
-            add(tr(Str::light), s.light ? buf : tr(Str::off), Act::Adjust, static_cast<int>(AdjustId::Light));
-            add(tr(Str::side_button), tr(sideName(s.side)), Act::Go, static_cast<int>(ListId::Side));
+            add(tr(Str::light), st.lamp == radio::Lamp::Off ? tr(Str::off) : st.lamp == radio::Lamp::Sos ? "SOS" : buf,
+                Act::Lamp);
             if (st.utcMs >= 0)
                 clk::hhmm(st.utcMs, buf);
             else
@@ -404,12 +395,6 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             add(tr(Str::language), i18n::kLangName[s.lang < i18n::kLangCount ? s.lang : 0], Act::Go,
                 static_cast<int>(ListId::Language));
             add(tr(Str::about), "", Act::Info, static_cast<int>(InfoId::About));
-            break;
-        case ListId::Side:
-            add(tr(Str::side_mute), "", Act::Side, static_cast<int>(radio::Side::Mute));
-            add(tr(Str::side_next), "", Act::Side, static_cast<int>(radio::Side::NextPreset));
-            add(tr(Str::side_back), "", Act::Side, static_cast<int>(radio::Side::Back));
-            cur_ = static_cast<int>(s.side);
             break;
         case ListId::Language:
             for (int i = 0; i < i18n::kLangCount; i++) add(i18n::kLangName[i], "", Act::Language, i);
@@ -453,14 +438,7 @@ void Ui::scrollTo() {
     l.top = clampi(l.top, 0, maxTop);
 }
 
-int Ui::adjustValue(const State& s) const {
-    switch (adjust_) {
-        case AdjustId::Volume: return s.volume;
-        case AdjustId::Contrast: return s.contrast;
-        case AdjustId::Light: return s.light;
-    }
-    return 0;
-}
+int Ui::adjustValue(const State& s) const { return adjust_ == AdjustId::Volume ? s.volume : s.contrast; }
 
 void Ui::adjustDone() {
     if (adjust_ == AdjustId::Volume) return goHome();
@@ -469,6 +447,12 @@ void Ui::adjustDone() {
 
 void Ui::stopSeek(const Status& st, Output& out) {
     if (st.seeking) out.push(Cmd::SeekStop);
+}
+
+void Ui::openLamp(const Status& st, Output& out) {
+    if (view_ == View::List && depth_ < 4) stack_[depth_++] = list_;
+    if (st.lamp == radio::Lamp::Off) out.push(Cmd::Lamp, static_cast<int>(radio::Lamp::On));
+    view_ = View::Lamp;
 }
 
 void Ui::startSeek(int dir, const State& s, Output& out, uint32_t now) {
@@ -509,7 +493,6 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         case Act::Band: out.push(Cmd::Band, arg); return goHome();
         case Act::Mode: out.push(Cmd::SetMode, arg); return goHome();
         case Act::Preset:
-            favIdx_ = arg;
             out.push(Cmd::TunePreset, arg);
             return goHome();
         case Act::Step: out.push(Cmd::Step, arg); return goHome();
@@ -524,7 +507,7 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
             stationTop_ = 0;
             stationSeq_ = st.rtSeq;
             return;
-        case Act::Side: out.push(Cmd::SideAction, arg); return popTo();
+        case Act::Lamp: return openLamp(st, out);
         case Act::Language: out.push(Cmd::Language, arg); return popTo();
     }
 }
@@ -541,6 +524,8 @@ void Ui::startEntry(const char* ssid, const char* value, int idx) {
 
 void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, Output& out) {
     if (view_ == View::Message) return;
+    // The side button's hold does nothing on the splash, a message or the confirm screen.
+    if (e.type == EventType::SideHold && (view_ == View::Splash || view_ == View::Confirm)) return;
     lastInput_ = now;
     if (view_ == View::Splash) return endSplash(out);
     stopSeek(st, out);
@@ -566,18 +551,13 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     scrollTo();
                     break;
                 }
-                case View::Adjust: {
-                    const int lo = adjust_ == AdjustId::Contrast ? radio::kContrastMin : 0;
-                    const int hi = adjust_ == AdjustId::Volume     ? radio::kVolumeMax
-                                   : adjust_ == AdjustId::Contrast ? radio::kContrastMax
-                                                                   : radio::kLightMax;
-                    const int v = clampi(adjustValue(s) + d, lo, hi);
-                    const Cmd c = adjust_ == AdjustId::Volume     ? Cmd::Volume
-                                  : adjust_ == AdjustId::Contrast ? Cmd::Contrast
-                                                                  : Cmd::Light;
-                    out.push(c, v);
+                case View::Adjust:
+                    if (adjust_ == AdjustId::Volume)
+                        out.push(Cmd::Volume, clampi(s.volume + d, 0, radio::kVolumeMax));
+                    else
+                        out.push(Cmd::Contrast, clampi(s.contrast + d, radio::kContrastMin, radio::kContrastMax));
                     break;
-                }
+                case View::Lamp: out.push(Cmd::Light, clampi(s.light + d, radio::kLightMin, radio::kLightMax)); break;
                 case View::Entry: entryIdx_ = mod(entryIdx_ + d, kRingLen); break;
                 case View::Station: {
                     syncStation(st);
@@ -595,6 +575,11 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                 case View::Info:
                 case View::Station: return popTo();
                 case View::Adjust: return adjustDone();
+                // The lamp screen's press: on, SOS, off; off closes the screen.
+                case View::Lamp:
+                    if (st.lamp != radio::Lamp::Sos) return out.push(Cmd::Lamp, static_cast<int>(radio::Lamp::Sos));
+                    out.push(Cmd::Lamp, static_cast<int>(radio::Lamp::Off));
+                    return popTo();
                 case View::Confirm:
                     out.push(Cmd::Install);
                     return message(i18n::tr(s.lang, Str::installing));
@@ -669,38 +654,32 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
             }
             return;
 
+        // A short press of the side button is Back.
         case EventType::Side:
             if (view_ == View::Confirm) {
                 out.push(Cmd::CancelInstall);
                 toast(i18n::tr(s.lang, Str::toast_cancelled), now);
                 return goHome();
             }
-            switch (s.side) {
-                case radio::Side::Mute:
-                    out.push(Cmd::Mute, !s.muted);
-                    return toast(i18n::tr(s.lang, s.muted ? Str::toast_sound : Str::toast_muted), now);
-                case radio::Side::NextPreset: {
-                    if (!s.presetCount) return toast(i18n::tr(s.lang, Str::toast_none), now);
-                    favIdx_ = (favIdx_ + 1) % s.presetCount;
-                    out.push(Cmd::TunePreset, favIdx_);
-                    goHome();
-                    char t[96];
-                    snprintf(t, sizeof t, i18n::tr(s.lang, Str::toast_preset), favIdx_ + 1, s.presets[favIdx_].name);
-                    return toast(t, now);
-                }
-                case radio::Side::Back:
-                    if (view_ == View::List || view_ == View::Info || view_ == View::Entry || view_ == View::Station)
-                        return popTo();
-                    if (view_ == View::Adjust) return adjustDone();
-                    return;
-            }
+            if (view_ == View::List || view_ == View::Info || view_ == View::Entry || view_ == View::Station ||
+                view_ == View::Lamp)
+                return popTo();
+            if (view_ == View::Adjust) return adjustDone();
+            return;
+
+        // Its hold turns the lamp on with the lamp screen, or off, closing the lamp screen as Back.
+        case EventType::SideHold:
+            if (st.lamp == radio::Lamp::Off) return openLamp(st, out);
+            out.push(Cmd::Lamp, static_cast<int>(radio::Lamp::Off));
+            if (view_ == View::Lamp) popTo();
             return;
     }
 }
 
 void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
     if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out);
-    if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info) && now - lastInput_ > kMenuTimeoutMs)
+    if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info || view_ == View::Lamp) &&
+        now - lastInput_ > kMenuTimeoutMs)
         goHome();
     if (view_ == View::Confirm && now - confirmStart_ > kConfirmTimeoutMs) {
         out.push(Cmd::CancelInstall);
@@ -718,6 +697,7 @@ void Ui::render(Frame& f, uint32_t now, const State& s, const Status& st) {
         case View::Home: return drawHome(f, now, s, st);
         case View::List: return drawList(f, s, st);
         case View::Adjust: return drawAdjust(f, s);
+        case View::Lamp: return drawLamp(f, s, st);
         case View::Info: return drawInfo(f, s, st);
         case View::Entry: return drawEntry(f, s);
         case View::Confirm: return drawConfirm(f, s);
@@ -857,13 +837,9 @@ void Ui::drawList(Frame& f, const State& s, const Status& st) {
 }
 
 void Ui::drawAdjust(Frame& f, const State& s) {
-    const char* title = i18n::tr(s.lang, adjust_ == AdjustId::Volume     ? Str::volume
-                                         : adjust_ == AdjustId::Contrast ? Str::contrast
-                                                                         : Str::light);
-    const int lo = adjust_ == AdjustId::Contrast ? radio::kContrastMin : 0;
-    const int hi = adjust_ == AdjustId::Volume     ? radio::kVolumeMax
-                   : adjust_ == AdjustId::Contrast ? radio::kContrastMax
-                                                   : radio::kLightMax;
+    const bool vol = adjust_ == AdjustId::Volume;
+    const char* title = i18n::tr(s.lang, vol ? Str::volume : Str::contrast);
+    const int lo = vol ? 0 : radio::kContrastMin, hi = vol ? radio::kVolumeMax : radio::kContrastMax;
     drawGutter(f, 0, false, s);
     gfx::text(f, 10, 0, title);
     const int v = adjustValue(s), w = jsRoundI(static_cast<double>(v - lo) / (hi - lo) * 106);
@@ -872,6 +848,19 @@ void Ui::drawAdjust(Frame& f, const State& s) {
     char t[12];
     snprintf(t, sizeof t, "%d/%d", v, hi);
     gfx::textR(f, 128, 24, t);
+}
+
+// The lamp screen: as an adjust screen, with what the next press does at the bottom left.
+void Ui::drawLamp(Frame& f, const State& s, const Status& st) {
+    const bool sos = st.lamp == radio::Lamp::Sos;
+    drawGutter(f, 0, false, s);
+    gfx::text(f, 10, 0, i18n::tr(s.lang, sos ? Str::light_sos : Str::light));
+    for (int i = 10; i < 116; i += 2) f.px(i, 17, 1);
+    f.fill(10, 13, jsRoundI(static_cast<double>(s.light) / radio::kLightMax * 106), 9, 1);
+    char t[12];
+    snprintf(t, sizeof t, "%d/%d", s.light, radio::kLightMax);
+    gfx::textR(f, 128, 24, t);
+    gfx::text(f, 10, 24, i18n::tr(s.lang, sos ? Str::press_off : Str::press_sos));
 }
 
 void Ui::drawInfo(Frame& f, const State& s, const Status& st) {
