@@ -4,12 +4,15 @@
 #include <cstdio>
 #include <cstring>
 
+#include "clock_core.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/timers.h"
+#include "lwip/apps/sntp.h"
+#include "lwip/tcpip.h"
 #include "store.h"
 #include "tcpip_adapter.h"  // before mdns.h, which needs its lwIP address types
 #include "mdns.h"
@@ -26,6 +29,29 @@ char s_pass[65];
 bool s_haveCreds = false;
 TimerHandle_t s_joinTimer;   // fires when the station has not joined in time
 TimerHandle_t s_retryTimer;  // periodic rejoin while the access point is up
+
+clk::SntpRule s_sntp;  // the UI loop's view of the client
+// The client's server name. lwIP keeps the pointer, so it lives here, written only in the TCP/IP task.
+char s_sntpServer[clk::SntpRule::kServerMax + 1];
+
+struct SntpJob {
+    clk::Sntp action;
+    char server[clk::SntpRule::kServerMax + 1];
+};
+
+// Runs in the TCP/IP task, where lwIP's SNTP calls belong.
+void sntpJob(void* arg) {
+    auto* job = static_cast<SntpJob*>(arg);
+    if (sntp_enabled()) sntp_stop();
+    if (job->action != clk::Sntp::Stop) {
+        std::strcpy(s_sntpServer, job->server);
+        sntp_setoperatingmode(SNTP_OPMODE_POLL);
+        sntp_setservername(0, s_sntpServer);
+        sntp_init();
+    }
+    ESP_LOGI(TAG, "sntp %s %s", job->action == clk::Sntp::Stop ? "stopped" : "started", s_sntpServer);
+    delete job;
+}
 
 class Lock {
 public:
@@ -178,6 +204,24 @@ void scan() {
 void info(Info& out) {
     Lock lock;
     out = s_info;
+}
+
+void timeSync(bool on, const char* server) {
+    bool joined, ap, hasIp;
+    {
+        Lock lock;
+        joined = s_info.joined;
+        ap = s_info.ap;
+        hasIp = joined && s_info.ip[0];
+    }
+    const clk::Sntp action = s_sntp.update(on, joined, ap, hasIp, server);
+    if (action == clk::Sntp::None) return;
+    auto* job = new SntpJob{action, {}};
+    std::strcpy(job->server, s_sntp.server());
+    if (tcpip_callback(sntpJob, job) != ERR_OK) {
+        ESP_LOGE(TAG, "sntp job not queued");
+        delete job;
+    }
 }
 
 }  // namespace net

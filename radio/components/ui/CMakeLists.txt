@@ -15,6 +15,6 @@ endif()
 
 idf_component_register(SRCS "ui.cpp" "${gendir}/i18n_strings.cpp"
                        INCLUDE_DIRS "include"
-                       REQUIRES gfx radio)
+                       REQUIRES gfx radio clock)
 target_include_directories(${COMPONENT_LIB} PUBLIC "${gendir}")
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17 -fno-threadsafe-statics -Wall -Wextra -Werror)

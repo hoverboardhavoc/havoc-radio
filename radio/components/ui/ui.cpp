@@ -5,6 +5,7 @@
 #include <cstring>
 #include <vector>
 
+#include "clock_core.h"
 #include "i18n_strings.h"
 
 namespace ui {
@@ -57,6 +58,30 @@ const char* ringKey(int idx, char* buf) {
 const char* ringLabel(int idx, char* buf) {
     const char* k = ringKey(mod(idx, kRingLen), buf);
     return std::strcmp(k, "SPACE") == 0 ? "␣" : k;
+}
+
+// Text cut with an ellipsis to at most w pixels.
+void cutText(const char* s, int w, char* out, size_t n) {
+    copy(out, n, s);
+    if (gfx::textW(out) <= w) return;
+    size_t k = std::strlen(out);
+    for (;;) {
+        while (k && (static_cast<uint8_t>(out[k]) & 0xC0) == 0x80) k--;  // whole characters
+        if (k + 4 <= n) {
+            std::memcpy(out + k, "\u2026", 4);
+            if (gfx::textW(out) <= w || !k) return;
+        }
+        k--;
+    }
+}
+
+// Age of the last sync: whole minutes below an hour, else whole hours.
+void ageText(int lang, int64_t ms, char* out, size_t n) {
+    const long m = static_cast<long>(ms / 60000);
+    if (m < 60)
+        snprintf(out, n, i18n::tr(lang, Str::age_min), static_cast<int>(m));
+    else
+        snprintf(out, n, i18n::tr(lang, Str::age_h), static_cast<int>(m / 60));
 }
 
 void barsText(int n, char* out) {
@@ -272,6 +297,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
         copy(it.mid, sizeof it.mid, mid);
         it.act = act;
         it.arg = arg;
+        it.skip = false;
     };
     char buf[24];
     auto tr = [&](Str k) { return i18n::tr(s.lang, k); };
@@ -369,6 +395,11 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             snprintf(buf, sizeof buf, "%d", s.light);
             add(tr(Str::light), s.light ? buf : tr(Str::off), Act::Adjust, static_cast<int>(AdjustId::Light));
             add(tr(Str::side_button), tr(sideName(s.side)), Act::Go, static_cast<int>(ListId::Side));
+            if (st.utcMs >= 0)
+                clk::hhmm(st.utcMs, buf);
+            else
+                copy(buf, sizeof buf, "--:--");
+            add(tr(Str::time), buf, Act::Go, static_cast<int>(ListId::Time));
             add(tr(Str::language), i18n::kLangName[s.lang < i18n::kLangCount ? s.lang : 0], Act::Go,
                 static_cast<int>(ListId::Language));
             add(tr(Str::about), "", Act::Info, static_cast<int>(InfoId::About));
@@ -383,6 +414,20 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             for (int i = 0; i < i18n::kLangCount; i++) add(i18n::kLangName[i], "", Act::Language, i);
             cur_ = s.lang < i18n::kLangCount ? s.lang : 0;
             break;
+        // Time: the sync switch, the server (cut to fit its row) and the age of the last sync, not selectable.
+        case ListId::Time: {
+            add(tr(Str::time_sync), s.timeSync ? tr(Str::on) : tr(Str::off), Act::ToggleTimeSync);
+            char server[sizeof items_[0].r];
+            cutText(s.ntpServer, 113 - 4 - gfx::textW(tr(Str::server)), server, sizeof server);
+            add(tr(Str::server), server, Act::Server);
+            if (st.syncAgeMs >= 0)
+                ageText(s.lang, st.syncAgeMs, buf, sizeof buf);
+            else
+                copy(buf, sizeof buf, tr(Str::never));
+            add(tr(Str::last_sync), buf, Act::None);
+            items_[count_ - 1].skip = true;
+            break;
+        }
     }
 }
 
@@ -469,13 +514,9 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         case Act::Step: out.push(Cmd::Step, arg); return goHome();
         case Act::Bandwidth: out.push(Cmd::Bandwidth, arg); return goHome();
         case Act::Seek: return startSeek(arg, s, out, now);
-        case Act::Join:
-            if (depth_ < 4) stack_[depth_++] = list_;
-            copy(entrySsid_, sizeof entrySsid_, st.nets[arg].ssid);
-            entry_[0] = 0;
-            entryIdx_ = 0;
-            view_ = View::Entry;
-            return;
+        case Act::Join: return startEntry(st.nets[arg].ssid, "", 0);
+        case Act::Server: return startEntry(nullptr, s.ntpServer, kRingLen - 1);  // filled in, on OK
+        case Act::ToggleTimeSync: return out.push(Cmd::TimeSync, !s.timeSync);
         case Act::Station:
             if (depth_ < 4) stack_[depth_++] = list_;
             view_ = View::Station;
@@ -485,6 +526,16 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         case Act::Side: out.push(Cmd::SideAction, arg); return popTo();
         case Act::Language: out.push(Cmd::Language, arg); return popTo();
     }
+}
+
+// Text entry for a WiFi password (`ssid`) or, with no ssid, the NTP server.
+void Ui::startEntry(const char* ssid, const char* value, int idx) {
+    if (depth_ < 4) stack_[depth_++] = list_;
+    entryServer_ = !ssid;
+    copy(entrySsid_, sizeof entrySsid_, ssid ? ssid : "");
+    copy(entry_, sizeof entry_, value);
+    entryIdx_ = idx;
+    view_ = View::Entry;
 }
 
 void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, Output& out) {
@@ -502,13 +553,15 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     out.push(Cmd::Tune, radio::clampHz(s.hz + d * radio::currentStep(s).hz, s.mode));
                     break;
                 case View::List: {
-                    const int len = count_ + 1 + gutterCount_;
-                    // Ring order: entries, then the gutter from the bottom slot up to Back.
-                    auto at = [&](int i) { return i < count_ ? i : -(len - i); };
+                    // Ring order: the selectable entries, then the gutter from the bottom slot up to Back.
+                    int ring[kMaxItems + 4], len = 0;
+                    for (int k = 0; k < count_; k++)
+                        if (!items_[k].skip) ring[len++] = k;
+                    for (int k = gutterCount_; k >= 0; k--) ring[len++] = -(k + 1);
                     int i = -1;
                     for (int k = 0; k < len; k++)
-                        if (at(k) == list_.cursor) i = k;
-                    list_.cursor = at(mod(i + d, len));
+                        if (ring[k] == list_.cursor) i = k;
+                    list_.cursor = ring[mod(i + d, len)];
                     scrollTo();
                     break;
                 }
@@ -548,6 +601,11 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     char buf[2];
                     const char* k = ringKey(entryIdx_, buf);
                     const size_t len = std::strlen(entry_);
+                    if (std::strcmp(k, "OK") == 0 && entryServer_) {
+                        copy(server_, sizeof server_, entry_);
+                        out.push(Cmd::NtpServer);
+                        return popTo();
+                    }
                     if (std::strcmp(k, "OK") == 0) {
                         copy(joinSsid_, sizeof joinSsid_, entrySsid_);
                         copy(joinPwd_, sizeof joinPwd_, entry_);
@@ -561,7 +619,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                         if (len) entry_[len - 1] = 0;
                         return;
                     }
-                    if (len < kPasswordMax) {
+                    if (len < static_cast<size_t>(entryServer_ ? radio::kNtpServerMax : kPasswordMax)) {
                         entry_[len] = std::strcmp(k, "SPACE") == 0 ? ' ' : k[0];
                         entry_[len + 1] = 0;
                     }
@@ -594,8 +652,10 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     volUntil_ = now + kToastMs;
                     break;
                 case View::List: {
-                    const int c = (list_.cursor > 0 ? list_.cursor : 0) + d * 4;
-                    list_.cursor = c > count_ - 1 ? count_ - 1 : c < 0 ? 0 : c;
+                    int c = (list_.cursor > 0 ? list_.cursor : 0) + d * 4;
+                    c = c > count_ - 1 ? count_ - 1 : c < 0 ? 0 : c;
+                    while (c > 0 && items_[c].skip) c--;
+                    list_.cursor = c;
                     scrollTo();
                     break;
                 }
@@ -744,8 +804,16 @@ void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
         const int p = jsRoundI((s.hz / 1000.0 - bd.lo) / (bd.hi - bd.lo) * 125);
         f.fill(p, 9, 3, 5, 1);
     }
-    gfx::big(f, 114 - gfx::bigW(fs), 14, fs);
+    const int fx = 114 - gfx::bigW(fs);
+    gfx::big(f, fx, 14, fs);
     gfx::textR(f, 128, 24, unit);
+    // UTC at the bottom left once the clock is set, when the frequency leaves 2 px for it.
+    if (st.utcMs >= 0) {
+        char t[8];
+        clk::hhmm(st.utcMs, t);
+        std::strcat(t, "Z");
+        if (gfx::textW(t) + 2 <= fx) gfx::text(f, 0, 24, t);
+    }
 }
 
 void Ui::drawGutter(Frame& f, int cursor, bool withGutter, const State&) {
@@ -806,7 +874,8 @@ void Ui::drawAdjust(Frame& f, const State& s) {
 }
 
 void Ui::drawInfo(Frame& f, const State& s, const Status& st) {
-    char lines[3][96];
+    char lines[4][96];
+    int n = 3;
     if (info_ == InfoId::Wifi) {
         if (st.joined) {
             snprintf(lines[0], sizeof lines[0], i18n::tr(s.lang, Str::joined_s), st.ssid);
@@ -821,9 +890,18 @@ void Ui::drawInfo(Frame& f, const State& s, const Status& st) {
         snprintf(lines[0], sizeof lines[0], "Havoc Radio %s", st.version);
         snprintf(lines[1], sizeof lines[1], "IP %s", st.ip);
         snprintf(lines[2], sizeof lines[2], i18n::tr(s.lang, Str::battery_d), st.battery);
+        if (st.utcMs >= 0) {
+            char t[6];
+            clk::hhmm(st.utcMs, t);
+            snprintf(lines[3], sizeof lines[3], "UTC %s", t);
+        } else {
+            snprintf(lines[3], sizeof lines[3], "%s", i18n::tr(s.lang, Str::utc_not_set));
+        }
+        n = 4;
     }
     drawGutter(f, -1, false, s);
-    for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
+    // Three lines sit 4 px down; four fill the screen from the top.
+    for (int i = 0; i < n; i++) gfx::text(f, 10, i * 8 + (n > 3 ? 0 : 4), lines[i]);
 }
 
 void Ui::syncStation(const Status& st) {
@@ -859,7 +937,10 @@ void Ui::drawStation(Frame& f, const State& s, const Status& st) {
 
 void Ui::drawEntry(Frame& f, const State& s) {
     char t[96], buf[2];
-    snprintf(t, sizeof t, i18n::tr(s.lang, Str::password_for), entrySsid_);
+    if (entryServer_)
+        copy(t, sizeof t, i18n::tr(s.lang, Str::ntp_server));
+    else
+        snprintf(t, sizeof t, i18n::tr(s.lang, Str::password_for), entrySsid_);
     gfx::text(f, 0, 0, t);
     const int g = groupOf(entryIdx_);
     gfx::textR(f, 128, 0, g == 4 ? i18n::tr(s.lang, Str::group_edit) : kGroupName[g]);

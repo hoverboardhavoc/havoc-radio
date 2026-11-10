@@ -12,7 +12,17 @@
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
 main { max-width: 640px; margin: 0 auto; padding: 16px; display: grid; gap: 14px; }
-header { display: flex; justify-content: space-between; align-items: baseline; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 4px 10px; flex-wrap: wrap; }
+nav { display: flex; gap: 4px; }
+nav a { color: var(--muted); text-decoration: none; padding: 4px 10px; border-radius: 999px; border: 1px solid transparent; }
+nav a.on { color: var(--accent); border-color: var(--accent); }
+.clock { font: 600 1rem ui-monospace, Menlo, monospace; flex-basis: 100%; }
+.clock small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.view { display: grid; gap: 14px; }
+.view[hidden] { display: none; }
+.switch { display: flex; flex-direction: row; gap: 8px; align-items: center; color: var(--ink); font-size: 1rem; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 8px 0 0; color: var(--muted); font-size: 0.85rem; }
+dd { margin: 0; }
 h1 { font-size: 1.3rem; margin: 0; }
 h2 { font-size: 1rem; margin: 0 0 8px; }
 section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
@@ -32,8 +42,10 @@ td.f { color: var(--muted); font-family: ui-monospace, Menlo, monospace; }
 td.a { text-align: right; white-space: nowrap; }
 td.a button { padding: 2px 7px; }
 .bars { font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
-#status { color: var(--muted); font-size: 0.85rem; }
+#status { color: var(--muted); font: 400 0.85rem system-ui, -apple-system, "Segoe UI", sans-serif; margin-left: 6px; }
 #otaMsg { color: var(--muted); }
+#timeMsg { color: var(--muted); margin: 6px 0 0; }
+#timeMsg:empty { display: none; }
 .rds { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; display: grid; gap: 4px; }
 .ps { font: 700 1.35rem/1.2 ui-monospace, Menlo, monospace; letter-spacing: 0.04em; }
 .rt { min-height: 1.45em; }
@@ -46,8 +58,13 @@ td.a button { padding: 2px 7px; }
 </head>
 <body>
 <main>
-  <header><h1>Havoc Radio</h1><span id="status"></span></header>
+  <header>
+    <h1>Havoc Radio</h1>
+    <nav><a href="#" data-view="radio" data-t="web_radio"></a><a href="#settings" data-view="settings" data-t="web_settings"></a></nav>
+    <span class="clock"><span id="clock"></span> <span id="status"></span></span>
+  </header>
 
+  <div class="view" id="radioView">
   <section>
     <div class="freq"><span id="freq">--</span><small id="unit"></small></div>
     <div class="meta"><span id="band"></span><span id="mode"></span><span><span data-t="web_signal"></span>
@@ -78,6 +95,9 @@ td.a button { padding: 2px 7px; }
       <button id="presetAdd" type="button" data-t="web_add"></button>
     </div>
   </section>
+  </div>
+
+  <div class="view" id="settingsView" hidden>
 
   <section>
     <h2 data-t="wifi"></h2>
@@ -90,6 +110,18 @@ td.a button { padding: 2px 7px; }
   </section>
 
   <section>
+    <h2 data-t="time"></h2>
+    <label class="switch"><input id="timeSync" type="checkbox"> <span><span data-t="time_sync"></span> (NTP)</span></label>
+    <div class="row">
+      <input id="server" maxlength="63" size="24" autocapitalize="off" spellcheck="false" data-ph="ntp_server">
+      <button id="serverSave" type="button" class="primary" data-t="web_save"></button>
+      <button id="serverDefault" type="button" data-t="web_default"></button>
+    </div>
+    <p id="timeMsg"></p>
+    <div id="timeInfo"></div>
+  </section>
+
+  <section>
     <h2 data-t="web_firmware"></h2>
     <div class="row">
       <input id="fw" type="file" accept=".bin">
@@ -98,6 +130,7 @@ td.a button { padding: 2px 7px; }
     <p id="otaMsg"></p>
     <div class="meta"><span id="version"></span><span id="battery"></span></div>
   </section>
+  </div>
 </main>
 <script id="lib">
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -116,10 +149,58 @@ function rdsHtml(r, hz, t) {
     (tags.length ? `<div class="meta">${tags.join('')}</div>` : '') +
     (af.length ? `<div class="meta af">${esc(t('web_also_on'))} ${af.join(' ')}</div>` : '');
 }
+// A translated string with %d and %s filled in order; %% is a percent sign.
+function fmt(s, ...a) { return s.replace(/%[ds%]/g, m => m === '%%' ? '%' : String(a.shift())); }
+// The view for a location hash: Settings for #settings, else Radio. `els` has the two views and the header links;
+// the link of the view shown is marked.
+function viewOf(hash) { return hash === '#settings' ? 'settings' : 'radio'; }
+function showView(hash, els) {
+  const v = viewOf(hash);
+  els.radio.hidden = v !== 'radio';
+  els.settings.hidden = v !== 'settings';
+  els.links.forEach(a => a.classList.toggle('on', a.dataset.view === v));
+  return v;
+}
+const pad2 = n => String(n).padStart(2, '0');
+const hm = (d, utc) => utc ? `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}` : `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const hms = (d, utc) => `${hm(d, utc)}:${pad2(utc ? d.getUTCSeconds() : d.getSeconds())}`;
+// The header clock for the radio's UTC in ms (null until its clock is set): the time in the browser's zone and UTC.
+function clockHtml(utcMs, t) {
+  if (utcMs == null) return `<span class="nosig">${esc(t('web_time_not_set'))}</span>`;
+  const d = new Date(utcMs);
+  return `${hm(d, false)}<small>${hm(d, true)} UTC</small>`;
+}
+// Age of a sync as the radio shows it: whole minutes below an hour, else whole hours.
+function ageText(ms, t) {
+  const m = Math.floor(ms / 60000);
+  return m < 60 ? fmt(t('age_min'), m) : fmt(t('age_h'), Math.floor(m / 60));
+}
+// The Time card's details: the radio's UTC, this browser's own clock with its zone, and the last sync with the
+// server. `time` is the state's `time`, `utcMs` the radio's UTC now, `now` the browser's clock.
+function timeHtml(time, utcMs, now, zone, t) {
+  const rows = [
+    ['UTC', utcMs == null ? esc(t('web_time_not_set')) : `<span class="mono">${hms(new Date(utcMs), true)}</span>`],
+    [esc(t('web_browser')), `<span class="mono">${hms(new Date(now), false)}</span> (${esc(zone)})`],
+    [esc(t('last_sync')), time.last_sync_ms == null || utcMs == null ? esc(t('never'))
+      : esc(fmt(t('web_synced'), ageText(utcMs - time.last_sync_ms, t), time.server))],
+  ];
+  return `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+}
+// The Time card's controls: the switch posts {sync}, Save posts the server typed, Default an empty server (the
+// radio's default). `post(url, body)` sends it.
+function bindTime(el, post) {
+  el.sync.onchange = () => post('/api/time', { sync: el.sync.checked });
+  el.save.onclick = () => post('/api/time', { server: el.server.value.trim() });
+  el.def.onclick = () => post('/api/time', { server: '' });
+  el.server.onkeydown = e => { if (e.key === 'Enter') el.save.onclick(); };
+}
 </script>
 <script>
 const $ = id => document.getElementById(id);
 let T = {}, lang = '', st = null;
+// The radio's UTC when the last state came, and the browser's clock then: the clock runs on between states.
+let clockBase = { utc: null, at: 0 };
+const radioUtc = () => clockBase.utc == null ? null : clockBase.utc + (Date.now() - clockBase.at);
 
 const t = k => T[k] || k;
 async function loadStrings() {
@@ -133,6 +214,7 @@ async function loadStrings() {
 async function post(url, body, method = 'POST') {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
   if (r.ok) render(await r.json());
+  return r.ok;
 }
 
 function fill(sel, items, value) {
@@ -146,9 +228,20 @@ function fill(sel, items, value) {
   sel.value = value;
 }
 
+function showClock() {
+  $('clock').innerHTML = clockHtml(radioUtc(), t);
+  if (st && st.time) $('timeInfo').innerHTML = timeHtml(st.time, radioUtc(), Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone || '', t);
+}
+
 function render(s) {
   s = st = Object.assign(st || {}, s);
   if (s.lang !== lang) { lang = s.lang; loadStrings(); }
+  if (s.time) {
+    clockBase = { utc: s.time.utc_ms, at: Date.now() };
+    $('timeSync').checked = s.time.sync;
+    if (document.activeElement !== $('server')) $('server').value = s.time.server;
+  }
+  showClock();
   $('freq').textContent = s.freq;
   $('unit').textContent = s.unit;
   $('band').textContent = s.band;
@@ -210,6 +303,14 @@ $('vol').onchange = e => post('/api/volume', { volume: +e.target.value });
 $('mute').onchange = e => post('/api/volume', { mute: e.target.checked });
 $('presetAdd').onclick = () => { post('/api/presets', { action: 'add', name: $('presetName').value }); $('presetName').value = ''; };
 $('join').onclick = () => post('/api/wifi', { ssid: $('ssid').value, password: $('pass').value });
+bindTime({ sync: $('timeSync'), server: $('server'), save: $('serverSave'), def: $('serverDefault') }, async (url, body) => {
+  $('timeMsg').textContent = '';
+  if (!(await post(url, body))) $('timeMsg').textContent = t('web_failed');
+});
+const views = { radio: $('radioView'), settings: $('settingsView'), links: [...document.querySelectorAll('nav a')] };
+addEventListener('hashchange', () => showView(location.hash, views));
+showView(location.hash, views);
+setInterval(showClock, 1000);
 $('upload').onclick = async () => {
   const f = $('fw').files[0];
   if (!f) return;

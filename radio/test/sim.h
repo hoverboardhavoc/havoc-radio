@@ -4,6 +4,7 @@
 #include <cstring>
 #include <string>
 
+#include "clock_core.h"
 #include "i18n_strings.h"
 #include "radio_model.h"
 #include "ui.h"
@@ -16,6 +17,7 @@ struct Sim {
     ui::Network nets[3] = {{"Lab", 3}, {"Telenor-5G", 2}, {"Guest", 1}};
     char ssid[33] = "Lab";
     std::string ps, rt;
+    clk::Core clock;  // monotonic time: the scenario time plus kBoot, as the prototype's clock
     gfx::Frame frame;
 
     Sim() {
@@ -65,6 +67,7 @@ struct Sim {
                     st.seekDir = static_cast<int8_t>(c.v);
                     break;
                 case radio::Cmd::SeekStop: st.seeking = false; break;
+                case radio::Cmd::NtpServer: radio::setNtpServer(s, ui.serverText()); break;
                 case radio::Cmd::Join:
                     std::strncpy(ssid, ui.joinSsid(), sizeof ssid - 1);
                     st.joined = true;
@@ -75,7 +78,12 @@ struct Sim {
         }
     }
 
+    // An NTP sync at time t: UTC in ms since 1970.
+    void ntp(uint32_t t, int64_t utcMs) { clock.synced(utcMs, kBoot + t); }
+
     void tick(uint32_t t) {
+        st.utcMs = clock.utcMs(kBoot + t);
+        st.syncAgeMs = clock.syncAgeMs(kBoot + t);
         ui::Output o;
         ui.tick(kBoot + t, s, st, o);
         apply(o);

@@ -147,6 +147,15 @@ TEST(strings_fit_slots) {
             const char* name = c.tr(static_cast<Str>(static_cast<int>(Str::pty_1) + p - 1));
             c.fit(std::string("programme type '") + name + "'", 10 + w(widestPs()) + 3 + w(name), 128);
         }
+        // Settings > Time: the default server uncut, the age of a sync up to 9999 hours. Settings > About: the
+        // UTC line from x = 10. Server text entry: the title with the character group at the right.
+        c.row(c.tr(Str::time), "--:--");
+        c.row(c.tr(Str::time_sync), widest({c.tr(Str::on), c.tr(Str::off)}));
+        c.row(c.tr(Str::server), "pool.ntp.org");
+        c.row(c.tr(Str::last_sync), widest({c.tr(Str::never), fmt(c.tr(Str::age_min), 59), fmt(c.tr(Str::age_h), 9999)}));
+        c.fit("line '" + std::string(c.tr(Str::utc_not_set)) + "'", w(c.tr(Str::utc_not_set)), 117);
+        c.fit("entry title", w(c.tr(Str::ntp_server)) + 3 + w(widest({"abc", "ABC", "123", "#+=", c.tr(Str::group_edit)})),
+              128);
         // Full-screen messages, centred.
         c.fit("message", w(c.tr(Str::installing)), 128);
         c.fit("message", w(c.tr(Str::battery_empty)), 128);

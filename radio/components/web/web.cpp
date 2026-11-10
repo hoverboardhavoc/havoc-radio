@@ -20,6 +20,7 @@
 #include "power.h"
 #include "radio.h"
 #include "store.h"
+#include "utc_clock.h"
 
 extern const char page_start[] asm("_binary_index_html_start");
 extern const char page_end[] asm("_binary_index_html_end");
@@ -56,6 +57,17 @@ public:
                 raw("%c", c);
         }
         raw("\"");
+    }
+    // A 64-bit number, or null when negative; the SDK's printf has no %lld.
+    void ms(int64_t v) {
+        if (v < 0) return raw("null");
+        char d[20];
+        int n = 0;
+        do {
+            d[n++] = static_cast<char>('0' + v % 10);
+            v /= 10;
+        } while (v);
+        while (n) raw("%c", d[--n]);
     }
     const char* c_str() const { return b_; }
     size_t size() const { return len_; }
@@ -126,6 +138,14 @@ void stateJson(Json& j, bool full) {
     }
     j.raw("],\"rds\":");
     rdsJson(j, s);
+    const clk::Now now = clk::now();
+    j.raw(",\"time\":{\"utc_ms\":");
+    j.ms(now.utcMs);
+    j.raw(",\"last_sync_ms\":");
+    j.ms(now.lastSyncMs);
+    j.raw(",\"sync\":%s,\"server\":", s.timeSync ? "true" : "false");
+    j.str(s.ntpServer);
+    j.raw("}");
     if (full) {
         j.raw(",\"bands\":[");
         for (int i = 0; i < radio::kBandCount; i++) j.raw("%s\"%s\"", i ? "," : "", radio::kBands[i].name);
@@ -152,7 +172,7 @@ cJSON* body(httpd_req_t* req) {
 }
 
 esp_err_t sendState(httpd_req_t* req, bool full) {
-    static char buf[3584];
+    static char buf[3840];
     Json j(buf, sizeof buf);
     stateJson(j, full);
     httpd_resp_set_type(req, "application/json");
@@ -332,6 +352,24 @@ esp_err_t postWifi(httpd_req_t* req) {
     return ok ? sendState(req, false) : badRequest(req);
 }
 
+bool setServer(radio::State& s, void* arg) { return radio::setNtpServer(s, static_cast<const char*>(arg)); }
+
+// {"sync": bool} and/or {"server": s}; a server that fails the check answers 400 and nothing changes.
+esp_err_t postTime(httpd_req_t* req) {
+    cJSON* o = body(req);
+    if (!o) return badRequest(req);
+    const cJSON* sync = cJSON_GetObjectItem(o, "sync");
+    const cJSON* server = cJSON_GetObjectItem(o, "server");
+    const bool ok = (sync || server) && (!sync || cJSON_IsBool(sync)) &&
+                    (!server || (cJSON_IsString(server) && radio::validNtpServer(server->valuestring)));
+    if (ok) {
+        if (sync) apply(radio::Cmd::TimeSync, cJSON_IsTrue(sync));
+        if (server && radio::edit(setServer, server->valuestring)) store::touch();
+    }
+    cJSON_Delete(o);
+    return ok ? sendState(req, false) : badRequest(req);
+}
+
 // ---- server-sent events ----
 
 constexpr int kMaxStreams = 3;
@@ -362,7 +400,7 @@ esp_err_t getEvents(httpd_req_t* req) {
 }
 
 void pushEvents(void*) {
-    static char buf[3072];
+    static char buf[3328];
     Json j(buf, sizeof buf);
     j.raw("event: state\ndata: ");
     stateJson(j, false);
@@ -468,6 +506,7 @@ void start(const char* version) {
     handle("/api/presets", HTTP_POST, postPresets);
     handle("/api/presets", HTTP_DELETE, delPresets);
     handle("/api/wifi", HTTP_POST, postWifi);
+    handle("/api/time", HTTP_POST, postTime);
     handle("/api/events", HTTP_GET, getEvents);
     handle("/api/ota", HTTP_POST, postOta);
     // Twice a second: state with RSSI/SNR to every open event stream, sent from the server task.

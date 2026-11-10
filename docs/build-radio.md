@@ -65,7 +65,7 @@ within 30 s.
 |---|---|
 | `radio/CMakeLists.txt`, `radio/sdkconfig.defaults` | The ESP8266_RTOS_SDK project |
 | `radio/main/` | Startup and the UI loop |
-| `radio/components/` | `board`, `i2c`, `si4732`, `ssd1306`, `gfx`, `ui`, `input`, `radio`, `store`, `net`, `web`, `power` |
+| `radio/components/` | `board`, `i2c`, `si4732`, `ssd1306`, `gfx`, `ui`, `input`, `radio`, `rds`, `clock`, `store`, `net`, `web`, `power` |
 | `radio/components/web/page/index.html` | The web page served at `/` |
 | `radio/ui/prototype.html` | The UI reference |
 | `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch fetch, `idf.sh`, install image builder |

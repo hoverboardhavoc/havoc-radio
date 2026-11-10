@@ -205,7 +205,7 @@ TEST(language_setting) {
     Menu m;
     m.ev(3100, EventType::Turn, -4);
     m.ev(3200, EventType::Press);  // Settings
-    m.ev(3300, EventType::Turn, 5);
+    m.ev(3300, EventType::Turn, 6);
     m.ev(3400, EventType::Press);  // Language list, current language preselected
     CHECK(m.ui.listId() == ListId::Language);
     CHECK_EQ(m.ui.cursor(), 0);
@@ -215,4 +215,70 @@ TEST(language_setting) {
     CHECK(m.ui.listId() == ListId::Settings);
     m.ev(3700, EventType::Press);
     CHECK_EQ(m.ui.cursor(), 4);  // reopens on the chosen language
+}
+
+TEST(time_list) {
+    Menu m;
+    m.ev(3100, EventType::Turn, -4);
+    m.ev(3200, EventType::Press);  // Settings
+    m.ev(3300, EventType::Turn, 5);
+    m.ev(3400, EventType::Press);  // Time
+    CHECK(m.ui.listId() == ListId::Time);
+    CHECK_EQ(m.ui.cursor(), 0);
+    // Last sync is not selectable: the ring goes Time sync, Server, Back.
+    const int expect[] = {1, -1, 0, 1};
+    uint32_t t = 3400;
+    for (int e : expect) {
+        m.ev(t += 100, EventType::Turn, 1);
+        CHECK_EQ(m.ui.cursor(), e);
+    }
+    m.ev(t += 100, EventType::HoldTurn, 1);  // a jump stops on the last selectable entry
+    CHECK_EQ(m.ui.cursor(), 1);
+    m.ev(t += 100, EventType::Turn, -1);
+    m.ev(t += 100, EventType::Press);  // Time sync off
+    CHECK(!m.s.timeSync);
+    CHECK(m.ui.listId() == ListId::Time);
+    m.ev(t += 100, EventType::Press);
+    CHECK(m.s.timeSync);
+}
+
+TEST(server_entry) {
+    Menu m;
+    m.ev(3100, EventType::Turn, -4);
+    m.ev(3200, EventType::Press);
+    m.ev(3300, EventType::Turn, 5);
+    m.ev(3400, EventType::Press);
+    m.ev(3500, EventType::Turn, 1);
+    m.ev(3600, EventType::Press);  // Server: text entry with the server filled in, on OK
+    CHECK(m.ui.view() == View::Entry);
+    CHECK_STR(m.ui.entryText(), "pool.ntp.org");
+    CHECK_EQ(m.ui.entryIndex(), 85);
+    m.ev(3700, EventType::HoldTurn, 1);  // abc
+    uint32_t t = 3800;
+    for (int i = 0; i < 70; i++) m.ev(t += 10, EventType::Press);
+    CHECK_EQ(static_cast<int>(std::strlen(m.ui.entryText())), radio::kNtpServerMax);
+    m.ev(t += 100, EventType::Turn, -1);  // OK
+    m.ev(t += 100, EventType::Press);
+    CHECK(m.ui.listId() == ListId::Time);  // back in the Time list
+    CHECK_EQ(m.ui.cursor(), 1);
+    CHECK_STR(m.s.ntpServer, ("pool.ntp.org" + std::string(51, 'a')).c_str());
+    // A long press cancels: nothing stored.
+    m.ev(t += 100, EventType::Press);
+    m.ev(t += 100, EventType::Turn, -1);  // DEL
+    m.ev(t += 100, EventType::Press);
+    m.ev(t += 100, EventType::LongPress);
+    CHECK(m.ui.view() == View::Home);
+    CHECK_EQ(static_cast<int>(std::strlen(m.s.ntpServer)), radio::kNtpServerMax);
+}
+
+TEST(clock_set_until_power_off) {
+    Sim h;
+    h.tick(3000);
+    CHECK_EQ(h.st.utcMs, -1);
+    h.ntp(3000, 1794268800000LL);
+    h.st.joined = false;  // network lost
+    h.s.timeSync = false;  // time sync turned off
+    h.tick(63000);
+    CHECK_EQ(h.st.utcMs, 1794268800000LL + 60000);
+    CHECK_EQ(h.st.syncAgeMs, 60000);
 }

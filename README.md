@@ -23,8 +23,9 @@ language list](docs/images/screens.png)
 - The interface comes in 41 languages, each listed under its own name.
 - A web page on the local network shows the frequency and signal live, tunes the radio, edits presets, sets up
   WiFi and uploads firmware. A new firmware only installs after a press of the knob on the radio.
-- The radio makes no outside network connections. Without a home network it runs its own access point
-  `Havoc-Radio`.
+- The radio sets its clock in UTC from NTP while it is on a network and shows the time on the home screen. NTP is
+  its one outside network connection, and Settings turns it off. Without a home network it runs its own access
+  point `Havoc-Radio`.
 - Havoc Radio installs over WiFi on a radio with the stock firmware, through the radio's own update menu, with no
   soldering: [docs/installer.md](docs/installer.md).
 

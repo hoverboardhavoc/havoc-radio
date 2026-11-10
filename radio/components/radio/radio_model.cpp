@@ -108,6 +108,26 @@ void defaults(State& s) {
     s.light = 0;
     s.side = Side::Mute;
     for (int i = 0; i < kBandCount; i++) s.bandLast[i] = bandDefaultHz(i);
+    s.timeSync = true;
+    std::strcpy(s.ntpServer, kDefaultNtpServer);
+}
+
+bool validNtpServer(const char* server) {
+    size_t n = 0;
+    for (; server[n]; n++) {
+        const char c = server[n];
+        const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '-';
+        if (!ok || n >= static_cast<size_t>(kNtpServerMax)) return false;
+    }
+    return true;
+}
+
+bool setNtpServer(State& s, const char* server) {
+    if (!validNtpServer(server)) return false;
+    const char* v = *server ? server : kDefaultNtpServer;
+    if (!std::strcmp(s.ntpServer, v)) return false;
+    std::strcpy(s.ntpServer, v);
+    return true;
 }
 
 const char* modeName(Mode m) {
@@ -341,6 +361,7 @@ bool apply(State& s, const Command& c, bool ssb, const char* station) {
         case Cmd::Language:
             if (c.v < 0 || c.v > 255) return false;
             return set(s.lang, static_cast<uint8_t>(c.v));
+        case Cmd::TimeSync: return set(s.timeSync, c.v != 0);
         case Cmd::SavePreset:
             return presetAdd(s, station && *station ? station : bandLabel(s.hz, s.mode), s.hz, s.mode);
         case Cmd::TunePreset: {

@@ -18,6 +18,7 @@
 #include "ssd1306.h"
 #include "store.h"
 #include "ui.h"
+#include "utc_clock.h"
 #include "web.h"
 
 namespace {
@@ -46,6 +47,11 @@ void handle(const ui::Output& out) {
             case radio::Cmd::Install: web::decide(true); break;
             case radio::Cmd::CancelInstall: web::decide(false); break;
             case radio::Cmd::SplashEnd: s_netWanted = true; break;
+            case radio::Cmd::NtpServer:
+                if (radio::edit([](radio::State& st, void* p) { return radio::setNtpServer(st, static_cast<const char*>(p)); },
+                                const_cast<char*>(s_ui.serverText())))
+                    store::touch();
+                break;
             default:
                 if (radio::submit(c)) store::touch();
                 break;
@@ -93,6 +99,7 @@ extern "C" void app_main() {
     radio::start(s);
     input::start();
     power::start();
+    clk::init();
 
     ui::prepareSplash();
     s_ui.begin(millis());
@@ -125,6 +132,9 @@ extern "C" void app_main() {
         st.rt = s_rt;
         st.pty = s_rds.pty();
         st.rtSeq = s_rds.rtSeq();
+        const clk::Now clock = clk::now();
+        st.utcMs = clock.utcMs;
+        st.syncAgeMs = clock.syncAgeMs;
 
         radio::snapshot(s);
         for (int i = 0; i < q.n; i++) {
@@ -156,6 +166,7 @@ extern "C" void app_main() {
             web::start(kVersion);
             s_netUp = true;
         }
+        if (s_netUp) net::timeSync(s.timeSync, s.ntpServer);
         store::poll(now);
         vTaskDelay(1);
     }

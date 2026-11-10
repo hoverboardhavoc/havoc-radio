@@ -90,6 +90,15 @@ In LSB and USB, with a step of 10 Hz or 100 Hz, the frequency shows two decimals
 
 ![LSB with a 10 Hz step: 40m LSB step 10Hz, 7100.07 kHz](images/guide/home_ssb_fine.png)
 
+### The time
+
+Once the K-Radio has set its clock from the network (see [Time](#time)), the bottom left of the home screen shows
+the time in UTC, for example `13:05Z`. The `Z` marks UTC; the K-Radio has no local time. The time changes on the
+minute. It is left out until the clock is set, and when the frequency leaves no room for it, as with a 10 Hz step
+above 10 MHz.
+
+![The time on the home screen: 49m AM step 5k, 13:05Z, 6070 kHz](images/guide/time_home.png)
+
 ### Signal bars
 
 The bars show the signal strength. The first bar lights at 10 dBµV on LW, MW and SW and at 15 dBµV on FM. Each
@@ -313,7 +322,7 @@ Open the main menu, select the gear in the left column and press.
 
 ![Settings, first part: WiFi Lab, AGC on, Contrast 15, Light off](images/guide/settings.png)
 
-![Settings, last part: Light off, Side button mute, Language English, About](images/guide/settings_about.png)
+![Settings, last part: Side button mute, Time --:--, Language English, About](images/guide/settings_about.png)
 
 | Entry | Value shown | Press it to |
 |---|---|---|
@@ -322,8 +331,9 @@ Open the main menu, select the gear in the left column and press.
 | Contrast | 1 to 15 | set the screen contrast |
 | Light | 1 to 15, or `off` | set the light's brightness |
 | Side button | `mute`, `preset` or `back` | choose what the side button does |
+| Time | the time in UTC, or `--:--` before the clock is set | open the Time list |
 | Language | the language's name | choose the language |
-| About | | show the version, address and battery level |
+| About | | show the version, address, battery level and time |
 
 Back in Settings returns to the main menu.
 
@@ -391,6 +401,41 @@ Choose what the side button does. The K-Radio returns to Settings, which shows t
 
 On the firmware update screen the side button cancels the update, whatever its setting.
 
+### Time
+
+The K-Radio has no clock that runs while it is switched off. It sets its clock from an NTP time server on the
+internet while it is joined to a network. The first time comes within a few seconds of joining, and the clock is
+set again every hour. Between those it runs on the K-Radio's own crystal. The time stays set until the K-Radio is
+switched off, also when the network is lost or time sync is turned off. On its own access point the K-Radio cannot
+reach a time server, so the clock stays unset. All times are UTC.
+
+![Settings with Time selected: Time 13:05](images/guide/time_settings.png)
+
+The Time entry shows the time. Pressing it opens the Time list:
+
+![The Time list: Time sync on, Server pool.ntp.org, Last sync 12 min](images/guide/time_settings_list.png)
+
+| Entry | Value shown | Press it to |
+|---|---|---|
+| Time sync | `on` or `off` | switch time sync on or off |
+| Server | the NTP server | change the server |
+| Last sync | how long ago the clock was last set (`12 min`, `3 h`), or `never` | (it cannot be selected) |
+
+Time sync is on from the start. With time sync off the K-Radio makes no connections outside the local network.
+
+![Time sync off: Time sync off, Server pool.ntp.org, Last sync never](images/guide/time_never_off.png)
+
+The server is `pool.ntp.org` from the start. Pressing Server opens the text entry screen titled `NTP server`, with
+the current server filled in and `OK` selected; see [Typing a WiFi password](#typing-a-wifi-password) for how the
+screen works. A server is a host name or an IPv4 address of at most 63 letters, digits, dots (`.`) and hyphens
+(`-`): the `abc`, `123` and `#+=` groups hold them all. `OK` stores the server and returns to the Time list; an
+empty server stores `pool.ntp.org`. A server with any other character is not stored. A long press cancels. A long
+server is cut with `…` in the Time list.
+
+![The NTP server screen: NTP server, edit, pool.ntp.org and the character ring with OK selected](images/guide/time_server_entry.png)
+
+The clock uses the new server from its next sync.
+
 ### Language
 
 ![The language list: English (selected), Norsk, Svenska, Dansk](images/guide/language_list.png)
@@ -408,10 +453,13 @@ and mode names read the same in every language. Some translations use short form
 
 ### About
 
-![About: Havoc Radio 2026.46.0, IP 192.168.0.57, Battery 87%](images/guide/settings_info.png)
+![About: Havoc Radio 2026.46.0, IP 192.168.0.57, Battery 87%, UTC 13:05](images/guide/time_about.png)
 
-About shows the Havoc Radio version, the K-Radio's address on the network and the battery level. On its own access
-point the address is `192.168.4.1`. The battery level is read every 10 s. Press the wheel to return.
+About shows the Havoc Radio version, the K-Radio's address on the network, the battery level and the time in UTC.
+On its own access point the address is `192.168.4.1`. The battery level is read every 10 s. Before the clock is set
+the last line reads `UTC not set`. Press the wheel to return.
+
+![About before the clock is set: UTC not set](images/guide/settings_info.png)
 
 ## Typing a WiFi password
 
@@ -467,6 +515,12 @@ The K-Radio serves a web page on the local network. A phone or computer on the s
 
 ### What it does
 
+The page has two views, `Radio` and `Settings`, with links at the top. The Settings view has its own address,
+`http://radio.local/#settings`. Below the links the page shows the K-Radio's time in the browser's time zone and in
+UTC, or `time not set` before the K-Radio has set its clock.
+
+The Radio view:
+
 - It shows the frequency, band, mode and signal, and updates them twice a second. The signal shows as bars, with the
   strength in dBµV and the signal-to-noise ratio in dB.
 - On FM, the frequency section also shows the station's RDS: its name, the RadioText, the programme type, `TP` when the
@@ -478,22 +532,31 @@ The K-Radio serves a web page on the local network. A phone or computer on the s
 - Menus pick the band, mode, step and bandwidth. A slider sets the volume. A tick box mutes the K-Radio.
 - Under `Presets`, a preset's name tunes it. The buttons beside it rename (✎), move up (↑), move down (↓) and delete
   (✕) the preset. `Add current` saves the current frequency under the name typed in the `Name` box.
+
+The Settings view:
+
 - Under `WiFi`, type the network's name into `Network` and its password into `Password`, then press `Join`.
+- Under `Time`, the `Time sync (NTP)` tick box switches time sync on and off. `Save` stores the server typed in the
+  box beside it, and `Default` sets `pool.ntp.org`. A server that is not a host name or an IPv4 address is refused,
+  and the page shows `Failed`. Below, the section shows the K-Radio's time in UTC, this browser's own clock with its
+  time zone, and how long ago the K-Radio last set its clock, from which server. A server set on the K-Radio shows
+  on the page, and the reverse.
 - Under `Firmware`, `Upload` installs new firmware (see [Firmware updates](#firmware-updates)). The section also shows
   the version and the battery level.
 
-The page uses the language chosen on the K-Radio. It shows `No connection` at the top right while it cannot reach
-the K-Radio.
+The page uses the language chosen on the K-Radio. It shows `No connection` beside the time while it cannot reach the
+K-Radio.
 
 The page has no password. Anyone on the same network can tune the K-Radio and change its presets. Installing
-firmware needs a press of the wheel on the K-Radio itself. The K-Radio makes no connections to the internet.
+firmware needs a press of the wheel on the K-Radio itself. The K-Radio's one connection to the internet is to the NTP
+server, while time sync is on.
 
 ## Firmware updates
 
 New Havoc Radio firmware installs from the web page. The firmware file is `havoc-radio.bin`;
 [installer.md](installer.md#after-installing) says where it comes from.
 
-1. Open the web page. Under `Firmware`, choose the file and press `Upload`. The page shows "Press the knob on the
+1. Open the web page's Settings view. Under `Firmware`, choose the file and press `Upload`. The page shows "Press the knob on the
    radio within 30 s to install."
 2. The K-Radio receives and checks the file, then shows the confirm screen.
 
