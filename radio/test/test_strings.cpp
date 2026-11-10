@@ -98,6 +98,8 @@ TEST(strings_fit_slots) {
         c.row(c.tr(Str::bandwidth), "Auto");
         c.row(c.tr(Str::volume), widest({c.tr(Str::val_mute), "63"}));
         c.row(c.tr(Str::seek), "");
+        c.row(c.tr(Str::presets), "20");
+        c.row(c.tr(Str::settings), "");
         c.row("FM", c.tr(Str::only_fm));
         c.row("LSB", c.tr(Str::lower_ssb));
         c.row("USB", c.tr(Str::upper_ssb));

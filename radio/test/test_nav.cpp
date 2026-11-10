@@ -29,8 +29,8 @@ TEST(ring_order_main_menu) {
     Menu m;
     CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Main);
     CHECK_EQ(m.ui.cursor(), 0);
-    // Clockwise: down the six entries, then up the gutter from the bottom slot to Back, then the first entry.
-    const int expect[] = {1, 2, 3, 4, 5, -4, -3, -2, -1, 0, 1};
+    // Clockwise: down the eight entries (Volume to Settings), then Mute, then Back, then the first entry.
+    const int expect[] = {1, 2, 3, 4, 5, 6, 7, -2, -1, 0, 1};
     uint32_t t = 3100;
     for (int e : expect) {
         m.ev(t += 100, EventType::Turn, 1);
@@ -38,10 +38,77 @@ TEST(ring_order_main_menu) {
     }
     m.ev(t += 100, EventType::Turn, -2);
     CHECK_EQ(m.ui.cursor(), -1);
+    // Anticlockwise: Back, Mute, Settings and up the entries.
+    const int back[] = {-2, 7, 6, 5, 4, 3, 2, 1, 0, -1};
+    for (int e : back) {
+        m.ev(t += 100, EventType::Turn, -1);
+        CHECK_EQ(m.ui.cursor(), e);
+    }
+}
+
+TEST(ring_order_main_menu_fm) {
+    Sim f;
+    f.s.mode = radio::Mode::FM;
+    f.s.hz = 100700000;
+    f.ev(3000, EventType::Press);
+    CHECK_EQ(f.ui.cursor(), 0);
+    // Station sits between Seek and Settings: nine entries.
+    const int expect[] = {1, 2, 3, 4, 5, 6, 7, 8, -2, -1, 0};
+    uint32_t t = 3000;
+    for (int e : expect) {
+        f.ev(t += 100, EventType::Turn, 1);
+        CHECK_EQ(f.ui.cursor(), e);
+    }
+    const int back[] = {-1, -2, 8, 7};
+    for (int e : back) {
+        f.ev(t += 100, EventType::Turn, -1);
+        CHECK_EQ(f.ui.cursor(), e);
+    }
+    f.ev(t += 100, EventType::Press);
+    CHECK(f.ui.view() == View::Station);
+}
+
+TEST(main_menu_entries) {
+    // Opens on Volume: a press opens the volume screen.
+    Menu v;
+    v.ev(3100, EventType::Press);
+    CHECK(v.ui.view() == View::Adjust);
+    v.ev(3200, EventType::Turn, 2);
+    CHECK_EQ(v.s.volume, 47);
+    // Presets opens the presets list on the current preset.
+    Menu p;
+    p.ev(3100, EventType::Turn, 2);
+    p.ev(3200, EventType::Press);
+    CHECK(p.ui.listId() == ListId::Presets);
+    CHECK_EQ(p.ui.depth(), 1);
+    // An empty presets list opens with Back selected.
+    Menu e;
+    e.s.presetCount = 0;
+    e.ev(3100, EventType::Turn, 2);
+    e.ev(3200, EventType::Press);
+    CHECK(e.ui.listId() == ListId::Presets);
+    CHECK_EQ(e.ui.cursor(), -1);
+    // Settings, the last entry, opens Settings.
+    Menu st;
+    st.ev(3100, EventType::Turn, -3);
+    st.ev(3200, EventType::Press);
+    CHECK(st.ui.listId() == ListId::Settings);
+    CHECK_EQ(st.ui.depth(), 1);
+    // Mute toggles in place: the menu stays open on Mute.
+    Menu m;
+    m.ev(3100, EventType::Turn, -2);
+    CHECK_EQ(m.ui.cursor(), -2);
+    m.ev(3200, EventType::Press);
+    CHECK(m.s.muted);
+    CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Main);
+    CHECK_EQ(m.ui.cursor(), -2);
+    m.ev(3300, EventType::Press);
+    CHECK(!m.s.muted);
 }
 
 TEST(back_and_depth) {
     Menu m;
+    m.ev(3050, EventType::Turn, 1);
     m.ev(3100, EventType::Press);  // Band list
     CHECK(m.ui.listId() == ListId::Bands);
     CHECK_EQ(m.ui.depth(), 1);
@@ -53,14 +120,14 @@ TEST(back_and_depth) {
     m.ev(3300, EventType::Press);
     CHECK(m.ui.listId() == ListId::Main);
     CHECK_EQ(m.ui.depth(), 0);
-    m.ev(3400, EventType::Turn, -1);
+    m.ev(3400, EventType::Turn, -2);
     m.ev(3500, EventType::Press);  // Back from the main menu goes home
     CHECK(m.ui.view() == View::Home);
 }
 
 TEST(choosing_returns_home) {
     Menu m;
-    m.ev(3100, EventType::Turn, 2);
+    m.ev(3100, EventType::Turn, 4);
     m.ev(3200, EventType::Press);  // Step list
     m.ev(3300, EventType::Turn, 1);
     m.ev(3400, EventType::Press);
@@ -76,7 +143,7 @@ TEST(menu_timeout) {
     CHECK(m.ui.view() == View::Home);
     // Text entry does not time out.
     Menu e;
-    e.ev(3100, EventType::Turn, -4);
+    e.ev(3100, EventType::Turn, -3);
     e.ev(3200, EventType::Press);  // Settings
     e.ev(3300, EventType::Press);  // WiFi
     e.ev(3400, EventType::Turn, 1);
@@ -106,6 +173,7 @@ TEST(hold_turn) {
     h.ev(3100, EventType::HoldTurn, 1);
     CHECK(!h.s.muted);
     Menu m;
+    m.ev(3050, EventType::Turn, 1);
     m.ev(3100, EventType::Press);  // bands at 9
     m.ev(3200, EventType::HoldTurn, 1);
     CHECK_EQ(m.ui.cursor(), 13);
@@ -136,7 +204,7 @@ TEST(any_input_stops_seek) {
 
 TEST(text_entry) {
     Menu e;
-    e.ev(3100, EventType::Turn, -4);
+    e.ev(3100, EventType::Turn, -3);  // Settings
     e.ev(3200, EventType::Press);
     e.ev(3300, EventType::Press);
     e.ev(3400, EventType::Turn, 1);
@@ -176,6 +244,7 @@ TEST(side_button_actions) {
     CHECK_EQ(h.s.hz, 9996000);
     h.s.side = radio::Side::Back;
     h.ev(3300, EventType::Press);
+    h.ev(3350, EventType::Turn, 1);
     h.ev(3400, EventType::Press);
     CHECK_EQ(h.ui.depth(), 1);
     h.ev(3500, EventType::Side);
@@ -203,7 +272,7 @@ TEST(confirm_install) {
 
 TEST(language_setting) {
     Menu m;
-    m.ev(3100, EventType::Turn, -4);
+    m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);  // Settings
     m.ev(3300, EventType::Turn, 6);
     m.ev(3400, EventType::Press);  // Language list, current language preselected
@@ -219,7 +288,7 @@ TEST(language_setting) {
 
 TEST(time_list) {
     Menu m;
-    m.ev(3100, EventType::Turn, -4);
+    m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);  // Settings
     m.ev(3300, EventType::Turn, 5);
     m.ev(3400, EventType::Press);  // Time
@@ -244,7 +313,7 @@ TEST(time_list) {
 
 TEST(server_entry) {
     Menu m;
-    m.ev(3100, EventType::Turn, -4);
+    m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);
     m.ev(3300, EventType::Turn, 5);
     m.ev(3400, EventType::Press);
