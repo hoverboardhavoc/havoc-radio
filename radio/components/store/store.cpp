@@ -1,5 +1,6 @@
 #include "store.h"
 
+#include <cstddef>
 #include <cstring>
 
 #include "esp_log.h"
@@ -13,13 +14,17 @@ namespace {
 
 const char* TAG = "store";
 const char* kNamespace = "radio";
-// Bump when radio::State changes layout; a stored blob of another version or size is ignored.
-constexpr uint32_t kVersion = 1;
+// Bump when radio::State changes layout; a stored blob of another version or size is ignored, except version 1.
+constexpr uint32_t kVersion = 2;
 
 struct Blob {
     uint32_t version;
     radio::State state;
 };
+
+// Version 1 is version 2 without the time sync setting and the NTP server at the end: its settings and presets
+// are kept and the new fields take their defaults.
+constexpr size_t kV1Size = offsetof(Blob, state) + offsetof(radio::State, timeSync);
 
 bool s_dirty = false;
 uint32_t s_lastWrite = 0;
@@ -51,13 +56,18 @@ bool loadState(radio::State& s) {
     if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return false;
     Blob b;
     size_t n = sizeof b;
-    const bool ok = nvs_get_blob(h, "state", &b, &n) == ESP_OK && n == sizeof b && b.version == kVersion;
+    const bool read = nvs_get_blob(h, "state", &b, &n) == ESP_OK;
     nvs_close(h);
-    if (!ok) return false;
-    s = b.state;
-    // Values out of range in a stored blob fall back to the defaults.
     radio::State d;
     radio::defaults(d);
+    if (read && n == kV1Size && b.version == 1) {
+        b.state.timeSync = d.timeSync;
+        std::strcpy(b.state.ntpServer, d.ntpServer);
+    } else if (!read || n != sizeof b || b.version != kVersion) {
+        return false;
+    }
+    s = b.state;
+    // Values out of range in a stored blob fall back to the defaults.
     if (s.presetCount > radio::kMaxPresets) s.presetCount = 0;
     if (s.volume > radio::kVolumeMax) s.volume = d.volume;
     if (s.contrast < radio::kContrastMin || s.contrast > radio::kContrastMax) s.contrast = d.contrast;
@@ -73,6 +83,8 @@ bool loadState(radio::State& s) {
         if (s.bwIdx[i] >= n) s.bwIdx[i] = d.bwIdx[i];
     }
     for (int i = 0; i < s.presetCount; i++) s.presets[i].name[radio::kPresetName - 1] = 0;
+    s.ntpServer[radio::kNtpServerMax] = 0;
+    if (!s.ntpServer[0] || !radio::validNtpServer(s.ntpServer)) std::strcpy(s.ntpServer, d.ntpServer);
     return true;
 }
 

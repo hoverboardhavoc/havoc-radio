@@ -42,6 +42,10 @@ constexpr int kContrastMin = 1;
 constexpr int kContrastMax = 15;
 constexpr int kLightMax = 15;
 
+// NTP server: a host name or IPv4 address of letters, digits, '.' and '-'.
+constexpr int kNtpServerMax = 63;
+constexpr const char* kDefaultNtpServer = "pool.ntp.org";
+
 struct State {
     int32_t hz;  // tuned frequency in Hz; SSB tunes in 10 Hz steps
     Mode mode;
@@ -57,6 +61,8 @@ struct State {
     int32_t bandLast[kBandCount];  // Hz
     uint8_t presetCount;
     Preset presets[kMaxPresets];
+    bool timeSync;  // set the clock from NTP while joined
+    char ntpServer[kNtpServerMax + 1];
 };
 
 void defaults(State& s);
@@ -106,6 +112,8 @@ enum class Cmd : uint8_t {
     Install,      // confirm a pending firmware update
     CancelInstall,
     SplashEnd,    // the splash ended or was skipped: WiFi starts
+    TimeSync,     // v = 0/1
+    NtpServer,    // the server typed in text entry
 };
 
 struct Command {
@@ -122,6 +130,12 @@ bool presetAdd(State& s, const char* name, int32_t hz, Mode m);
 bool presetRename(State& s, int i, const char* name);
 bool presetMove(State& s, int from, int to);
 bool presetDelete(State& s, int i);
+
+// The NTP server check: 1 to 63 letters, digits, '.' and '-', or empty for the default.
+bool validNtpServer(const char* server);
+// Sets the NTP server; an empty one sets the default. Returns false, leaving the state as it was, for a server
+// that fails the check or is the one already set.
+bool setNtpServer(State& s, const char* server);
 
 // JavaScript Math.round: nearest integer, ties toward +infinity.
 double jsRound(double x);
