@@ -69,6 +69,6 @@ U15 is six unpopulated holes at the battery end of the board, labelled TXD, IO0 
 | Firmware | Layout |
 |---|---|
 | Stock | Arduino ESP8266 core 3.0.2: the eboot loader at `0x0`, the app at `0x1000`, the `eagle.flash.4m.ld` layout |
-| Havoc Radio | bootloader `0x0`, partition table `0x8000`, nvs `0x9000` (16 KB), otadata `0xd000` (8 KB), phy_init `0xf000` (4 KB), ota_0 `0x10000` (960 KB), ota_1 `0x110000` (960 KB) |
+| Havoc Radio | bootloader `0x0`, partition table `0x8000`, nvs `0x9000` (16 KB), otadata `0xd000` (8 KB), phy_init `0xf000` (4 KB), ota_0 `0x100000` (1 MB), ota_1 `0x200000` (1 MB); `0x10000` to `0xfffff` and `0x300000` to `0x3fffff` free |
 
 Flash mode DIO, 40 MHz, 4 MB.

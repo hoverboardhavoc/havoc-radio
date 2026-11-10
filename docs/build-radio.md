@@ -21,6 +21,11 @@ make install-image  # radio/build/havoc-radio-install.bin, the image the install
 with that environment and `radio/build/` as the build directory, so any `idf.py` command works through it, for
 example `./radio/tools/idf.sh menuconfig` or `./radio/tools/idf.sh size`.
 
+The partition table, `radio/partitions.csv`, has two 1 MB app slots, `ota_0` at `0x100000` and `ota_1` at
+`0x200000`. The ESP8266 runs its app from one 1 MB window of flash, so each slot fills a window from offset 0. The
+build fails when `havoc-radio.bin` is longer than a slot. A stale `radio/sdkconfig` overrides
+`radio/sdkconfig.defaults`; delete it after changing the defaults.
+
 The build fetches the Si4732 SSB patch from the PU2CLR SI4735 library on GitHub into `radio/build/ssb/`. The patch
 is not part of this repository. Without network access the firmware still builds, without LSB and USB.
 
@@ -64,9 +69,10 @@ within 30 s.
 | Path | Contents |
 |---|---|
 | `radio/CMakeLists.txt`, `radio/sdkconfig.defaults` | The ESP8266_RTOS_SDK project |
+| `radio/partitions.csv` | The partition table: two 1 MB app slots |
 | `radio/main/` | Startup and the UI loop |
 | `radio/components/` | `board`, `i2c`, `si4732`, `ssd1306`, `gfx`, `ui`, `input`, `radio`, `rds`, `clock`, `store`, `net`, `web`, `power` |
 | `radio/components/web/page/index.html` | The web page served at `/` |
 | `radio/ui/prototype.html` | The UI reference |
-| `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch fetch, `idf.sh`, install image builder |
+| `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch fetch, `idf.sh`, install image builder, app size check |
 | `radio/test/` | Host tests, scenarios and goldens |

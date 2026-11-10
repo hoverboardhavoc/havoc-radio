@@ -8,7 +8,9 @@
 - eboot's load_app_from_flash_raw(0) (core 3.0.2) loads only the reset stub;
 - the stub disassembles to the system_restart_core() sequence: Cache_Read_Disable(), the DPORT icache bits
   cleared, INTENABLE and LITBASE 0, rsync, a jump to the ROM reset vector;
-- the stock updater (core 3.0.2 Updater) accepts the image;
+- the partition table and the regions follow radio/partitions.csv: the app at ota_0, 0x100000, linked for offset 0
+  of its 1 MB flash window; the rest of the first window is 0xFF and the installer stages it as erase-only;
+- the stock updater (core 3.0.2 Updater) accepts the image and stages it clear of the copy to 0x0;
 - the builder rejects an oversized image and an oversized bootloader.
 """
 
@@ -35,6 +37,18 @@ STOCK_FS_START = 0x3FB000          # _FS_start of eagle.flash.4m.ld, minus 0x402
 LARGEST_STOCK_APP = 440208         # bytes, vendor image version 108
 STOCK_RUNNING_MODE = 2             # DIO: byte 2 of the stock eboot header at 0x0 (e9 02 02 40)
 REAL_FLASH_SIZE = 4 << 20
+
+# radio/partitions.csv: (name, type, subtype, offset, size).
+PARTITIONS = [("nvs", 1, 0x02, 0x9000, 0x4000), ("otadata", 1, 0x00, 0xD000, 0x2000),
+              ("phy_init", 1, 0x01, 0xF000, 0x1000), ("ota_0", 0, 0x10, 0x100000, 0x100000),
+              ("ota_1", 0, 0x11, 0x200000, 0x100000)]
+REGIONS = [0x0, 0x8000, 0xD000, 0x100000]  # bootloader, partition table, OTA data, app
+APP_OFFSET = 0x100000
+FLASH_WINDOW = 0x100000            # the ESP8266 maps one 1 MB window of flash at 0x40200000
+FLASH_MAP = 0x40200000
+# The installer's stage partition (installer/partitions.csv) and its region split.
+sys.path.insert(0, os.path.join(ROOT, "installer", "tools"))
+import make_stage  # noqa: E402
 
 checks = 0
 failures = 0
@@ -149,20 +163,65 @@ def check_builder_limits(stub_src):
         with open(os.path.join(d, "app.bin"), "wb") as f:
             f.write(b"\xe9" + bytes(app_len - 1))
         with open(os.path.join(d, "flash_project_args"), "w") as f:
-            f.write("--flash_mode dio --flash_freq 40m --flash_size 4MB\n0x0 boot.bin\n0x10000 app.bin\n")
+            f.write("--flash_mode dio --flash_freq 40m --flash_size 4MB\n0x0 boot.bin\n0x%x app.bin\n" % APP_OFFSET)
         try:
             mii.build_install_image(d, PREFIX, stub_src)
             return None
         except mii.BuildError as e:
             return str(e)
 
-    check(build("ok", boot, 0x300000 - 0x10000) is None, "builder accepts an image of exactly 3 MB")
-    err = build("big", boot, 0x300000 - 0x10000 + 1)
+    check(build("ok", boot, 0x300000 - APP_OFFSET) is None, "builder accepts an image of exactly 3 MB")
+    err = build("big", boot, 0x300000 - APP_OFFSET + 1)
     check(err is not None and "limit" in err, "builder rejects an image over 3 MB: %s" % err)
     big_boot = mii.build_rom_image(mii.RomImage(img.mode, img.size_freq, img.entry,
                                                 img.segments + [(0x3FFF0000, bytes(0x6000))]))
     err = build("bigboot", big_boot, 0x1000)
     check(err is not None and "0x8000" in err, "builder rejects a bootloader reaching 0x8000: %s" % err)
+
+
+def read_partition_table(path):
+    """[(name, type, subtype, offset, size)] of an ESP partition table binary (32-byte entries, magic aa 50)."""
+    with open(path, "rb") as f:
+        data = f.read()
+    parts = []
+    for pos in range(0, len(data) - 31, 32):
+        magic, ptype, subtype, offset, size, label = struct.unpack_from("<HBBII16s", data, pos)
+        if magic != 0x50AA:
+            break
+        parts.append((label.rstrip(b"\0").decode(), ptype, subtype, offset, size))
+    return parts
+
+
+def check_layout(image, files):
+    """The partition table, the region offsets, the app's link offset and the free first window."""
+    parts = read_partition_table(os.path.join(BUILD, "partition_table", "partition-table.bin"))
+    check(parts == PARTITIONS, "partition table as radio/partitions.csv: %s" % parts)
+    check([off for off, _ in files] == REGIONS,
+          "regions at %s" % ", ".join("0x%x" % off for off, _ in files))
+    app = dict(files).get(APP_OFFSET)
+    if app is None:
+        return
+    with open(app, "rb") as f:
+        app = f.read()
+    check(len(app) <= min(p[4] for p in PARTITIONS if p[1] == 0), "app %d B fits both slots" % len(app))
+    # The first segment is the code mapped from flash: its data at file offset 0x10 runs at 0x40200010 only
+    # when the app sits at offset 0 of its window.
+    seg_addr = struct.unpack_from("<I", app, 8)[0]
+    check(APP_OFFSET % FLASH_WINDOW == 0 and seg_addr == FLASH_MAP + 0x10,
+          "app linked for offset 0 of its flash window: first segment at 0x%08x" % seg_addr)
+    first_free = max(p[3] + p[4] for p in PARTITIONS if p[3] < APP_OFFSET)
+    check(all(b == 0xFF for b in image[first_free:APP_OFFSET]),
+          "free first window 0x%x..0x%x is 0xFF" % (first_free, APP_OFFSET))
+
+    # The installer's split: blank sectors are erase-only, the staged data fits the stage partition.
+    regions = make_stage.radio_flash().split_regions(0, image)
+    gap = [r for r in regions if r["target"] <= first_free < r["target"] + r["length"]]
+    check(len(gap) == 1 and gap[0]["erase"] and gap[0]["target"] + gap[0]["length"] == APP_OFFSET,
+          "installer: the free first window is in one erase-only region ending at 0x%x" % APP_OFFSET)
+    staged = sum(r["length"] for r in regions if not r["erase"])
+    stage_size = make_stage.stage_partition()[1] - make_stage.HEADER_SIZE
+    check(staged <= stage_size, "installer stages %d B of data regions, the stage holds %d B" % (staged, stage_size))
+    check(sum(r["length"] for r in regions) == len(image), "installer regions cover the image")
 
 
 def main():
@@ -208,6 +267,7 @@ def main():
     last = max(off + os.path.getsize(p) for off, p in files)
     check(len(image) % 4096 == 0 and len(image) - last < 4096, "length padded to a multiple of 4096")
     check(len(image) <= 0x300000, "image within 3 MB")
+    check_layout(image, files)
 
     # eboot after the copy: the flash from 0x0 is the image.
     loaded, entry = eboot_load_app_from_flash_raw(image)
@@ -232,6 +292,8 @@ def main():
     check(STOCK_FS_START - rounded >= sketch,
           "Update.begin: %d B fits beside a %d B stock app (limit %d B)"
           % (len(image), LARGEST_STOCK_APP, STOCK_FS_START - sketch))
+    staged_at = STOCK_FS_START - rounded
+    check(staged_at >= rounded, "staged at 0x%x, clear of eboot's copy to 0x0..0x%x" % (staged_at, rounded))
     check(image[0] == 0xE9 and image[:2] != b"\x1f\x8b", "byte 0 is 0xE9 (not gzip)")
     size = magic_flash_chip_size(image[3] >> 4)
     check(0 < size <= REAL_FLASH_SIZE, "flash-size nibble %x = %d B, within the chip" % (image[3] >> 4, size))

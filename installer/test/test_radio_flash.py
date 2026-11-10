@@ -154,7 +154,7 @@ class RegionSplit(unittest.TestCase):
         sectors = {off: (len(data) + SECTOR - 1) // SECTOR for off, data in images}
         self.assertEqual([(r["target"], r["length"], r["erase"]) for r in regions],
                          [(0x0, sectors[0x0] * SECTOR, False), (0x8000, SECTOR, False),
-                          (0xd000, 0x2000, True), (0x10000, sectors[0x10000] * SECTOR, False)])
+                          (0xd000, 0x2000, True), (0x100000, sectors[0x100000] * SECTOR, False)])
         rebuilt = bytearray(b"\x00" * 0x200000)
         for r in regions:
             rebuilt[r["target"]:r["target"] + r["length"]] = r["data"] or b"\xff" * r["length"]
