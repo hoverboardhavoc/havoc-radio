@@ -10,6 +10,7 @@ The pictures are the K-Radio's own screens, enlarged three times. The screen is 
 - [Controls](#controls)
 - [The home screen](#the-home-screen)
 - [The main menu](#the-main-menu)
+- [Station (RDS)](#station-rds)
 - [Presets](#presets)
 - [Settings](#settings)
 - [Typing a WiFi password](#typing-a-wifi-password)
@@ -79,6 +80,12 @@ FM shows the frequency in MHz with two decimals. The band name and the mode both
 
 ![FM: FM FM step 100k, 100.70 MHz](images/guide/home_fm.png)
 
+When an FM station sends RDS, its name (the PS, up to 8 characters) replaces the band name and the mode in the top
+row. The name builds up character by character as the K-Radio receives it. A tune, a seek or a band change clears it
+until the new station's name arrives.
+
+![FM with RDS: -METRO- step 100k, 99.50 MHz](images/guide/rds_home.png)
+
 In LSB and USB, with a step of 10 Hz or 100 Hz, the frequency shows two decimals in kHz.
 
 ![LSB with a 10 Hz step: 40m LSB step 10Hz, 7100.07 kHz](images/guide/home_ssb_fine.png)
@@ -129,7 +136,7 @@ Press the wheel on the home screen to open the main menu.
 
 The screen shows four rows at a time. The selected row is inverted. The current value of each entry is at the right.
 A dotted bar at the right edge shows that the list holds more entries than fit. The main menu holds Band, Mode, Step,
-Bandwidth, Volume and Seek.
+Bandwidth, Volume and Seek. On FM it also holds Station, after Seek.
 
 The narrow column at the left edge holds icons that can be selected:
 
@@ -155,8 +162,8 @@ These rules hold in every list.
 - A list opens with the current value selected.
 - Choosing a band, mode, preset, step or bandwidth returns to the home screen.
 - A long press returns to the home screen from any menu.
-- After 8 s without input the K-Radio returns to the home screen. Text entry and the firmware update screen do not
-  time out.
+- After 8 s without input the K-Radio returns to the home screen. Text entry, the Station screen and the firmware
+  update screen do not time out.
 
 ### Band
 
@@ -241,14 +248,40 @@ end. The search moves in steps of the current step.
 Turning the wheel, pressing it or pressing the side button stops a seek. Seek works on FM and AM. In LSB and USB the
 K-Radio shows `No seek in SSB`.
 
+## Station (RDS)
+
+Many FM stations send RDS (Radio Data System) alongside the sound: the station's name, the kind of programme and a
+line of text, often the song and artist or the show. The K-Radio shows them on FM. It does not switch frequency or
+programme on its own because of RDS.
+
+Open the main menu on FM, select `Station` and press.
+
+![The main menu on FM: Bandwidth, Volume, Seek and Station (selected)](images/guide/rds_menu_station.png)
+
+The top row shows the station's name at the left and the programme type at the right, for example `News`, `Pop
+music` or `Weather`. The rows below show the RadioText, broken into lines at the spaces. When the text needs more than
+three rows, turning the wheel scrolls it a row at a time. The screen follows the station while it is open: the text
+changes as new characters arrive, and a new text starts again at its first row.
+
+![The Station screen: -METRO-, News, Metro gir deg snart mer variert musikk](images/guide/rds_station.png)
+
+A station that sends a name but no text shows the top row alone. While the K-Radio receives no RDS, the screen shows
+`No RDS`.
+
+![No RDS](images/guide/rds_station_long_no_rds.png)
+
+Press the wheel to return to the main menu. A long press returns to the home screen. The Station screen stays open
+without input, so that a long text can be read to the end.
+
 ## Presets
 
 A preset holds a frequency, a mode and a name of up to 10 characters. The K-Radio holds up to 20 presets.
 
 ### Saving a preset
 
-Long-press the wheel on the home screen. The top row shows `Saved as preset 6`, with the new preset's number. The
-preset is named after the band, for example `49m`, or `SW` outside a named band. With 20 presets saved, the K-Radio
+Long-press the wheel on the home screen. The top row shows `Saved as preset 6`, with the new preset's number. On FM,
+when the top row shows the station's RDS name, the preset is named after the station, for example `-METRO-`.
+Otherwise it is named after the band, for example `49m`, or `SW` outside a named band. With 20 presets saved, the K-Radio
 shows `Presets full` and saves nothing.
 
 ### Choosing a preset
@@ -436,6 +469,10 @@ The K-Radio serves a web page on the local network. A phone or computer on the s
 
 - It shows the frequency, band, mode and signal, and updates them twice a second. The signal shows as bars, with the
   strength in dBµV and the signal-to-noise ratio in dB.
+- On FM, the frequency section also shows the station's RDS: its name, the RadioText, the programme type, `TP` when the
+  station carries traffic news (highlighted during a traffic announcement) and the station code (`PI`). `Also on`
+  lists the other frequencies that carry the same programme; a frequency there tunes the K-Radio to it. Without RDS
+  it shows `RDS: searching`.
 - The `-` and `+` buttons tune by the step. A frequency typed into the box (in MHz on FM, in kHz otherwise) tunes the
   K-Radio when `Tune` is pressed.
 - Menus pick the band, mode, step and bandwidth. A slider sets the volume. A tick box mutes the K-Radio.
