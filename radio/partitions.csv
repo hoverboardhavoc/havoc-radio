@@ -1,0 +1,9 @@
+# Havoc Radio, 4 MB flash. The ESP8266 runs its app from one 1 MB window of flash,
+# linked for its offset in the window, so both app slots sit at offset 0 of the
+# second and third windows. The rest of the first window and the last window are free.
+# Name,   Type, SubType, Offset,   Size
+nvs,      data, nvs,     0x9000,   0x4000
+otadata,  data, ota,     0xd000,   0x2000
+phy_init, data, phy,     0xf000,   0x1000
+ota_0,    app,  ota_0,   0x100000, 0x100000
+ota_1,    app,  ota_1,   0x200000, 0x100000

@@ -90,7 +90,7 @@ Power the SuperMini from any USB supply within a few metres of the radio. It sta
    ![](images/stock/tree-update.png)
 
 2. The radio connects, with its MAC address on the bottom line, and about 5 seconds later shows this while it
-   downloads about 0.8 MB. The SuperMini's LED blinks fast. To follow the download on a phone, join it to `Havoc`
+   downloads about 1.8 MB. The SuperMini's LED blinks fast. To follow the download on a phone, join it to `Havoc`
    and open `http://192.168.4.1`: the page's Downloads section shows the radio's MAC address and the bytes sent.
    The install runs the same without the phone.
 
@@ -177,7 +177,7 @@ radio/third_party/venv/bin/python radio/third_party/ESP8266_RTOS_SDK/components/
   0x0 radio/build/bootloader/bootloader.bin \
   0x8000 radio/build/partition_table/partition-table.bin \
   0xd000 radio/build/ota_data_initial.bin \
-  0x10000 radio/build/havoc-radio.bin
+  0x100000 radio/build/havoc-radio.bin
 ```
 
 `PORT` is the adapter's serial device, for example `/dev/cu.usbserial-0001`. If esptool reports that it cannot
