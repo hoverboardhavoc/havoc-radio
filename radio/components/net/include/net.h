@@ -14,6 +14,7 @@ constexpr const char* kApSsid = "Havoc-Radio";
 struct Info {
     bool joined = false;
     bool ap = false;
+    bool saved = false;  // a network is configured
     char ssid[33] = {};
     char ip[16] = {};
     ui::Network nets[kMaxNets];

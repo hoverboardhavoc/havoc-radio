@@ -140,6 +140,10 @@ extern "C" void app_main() {
         st.utcMs = clock.utcMs;
         st.syncAgeMs = clock.syncAgeMs;
         st.lamp = lamp::mode();
+        st.netSaved = ni.saved;
+        const guide::Info guideInfo = guide::info();
+        st.guide = &guideInfo;
+        st.hits = &guide::refresh(s.hz, !radio::isFm(s.mode), clock.utcMs);
 
         radio::snapshot(s);
         for (int i = 0; i < q.n; i++) {
@@ -148,6 +152,7 @@ extern "C" void app_main() {
             handle(out);
             radio::snapshot(s);
             st.lamp = lamp::mode();
+            st.hits = &guide::refresh(s.hz, !radio::isFm(s.mode), clock.utcMs);
         }
         ui::Output out;
         s_ui.tick(now, s, st, out);

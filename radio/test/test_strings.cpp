@@ -158,6 +158,29 @@ TEST(strings_fit_slots) {
         c.fit("line '" + std::string(c.tr(Str::utc_not_set)) + "'", w(c.tr(Str::utc_not_set)), 117);
         c.fit("entry title", w(c.tr(Str::ntp_server)) + 3 + w(widest({"abc", "ABC", "123", "#+=", c.tr(Str::group_edit)})),
               128);
+        // The frequency guide. Settings: the Guide row with the season; Settings > Guide: the table or No guide, and
+        // Update guide with No network. Station: No guide and Nothing listed from x = 10, irr no wider than a time
+        // window; the details lines from x = 10 with typical EiBi codes. Download mode: the title and steps from
+        // x = 0, Back: cancel 3 px clear of the largest KB count. Results on home as toasts.
+        c.row(c.tr(Str::guide), "B26");
+        c.row(c.tr(Str::no_guide), "");
+        c.row(c.tr(Str::update_guide), c.tr(Str::no_network));
+        c.fit("line '" + std::string(c.tr(Str::no_guide)) + "'", w(c.tr(Str::no_guide)), 118);
+        const std::string nothing = fmt(c.tr(Str::nothing_listed), "29999");
+        c.fit("line '" + nothing + "'", w(nothing), 118);
+        c.fit("irr", w(c.tr(Str::irr)), w("0000-2400"));
+        for (Str k : {Str::daily, Str::irr}) {
+            const std::string line = std::string("0000-2400 UTC ") + c.tr(k);
+            c.fit("line '" + line + "'", w(line), 118);
+        }
+        for (const std::string& s : {fmt(c.tr(Str::language_s), "E,F,Ar"), fmt(c.tr(Str::target_s), "NAm,Eu")})
+            c.fit("line '" + s + "'", w(s), 118);
+        for (Str k : {Str::updating_guide, Str::checking, Str::downloading})
+            c.fit(std::string("download '") + c.tr(k) + "'", w(c.tr(k)), 128);
+        c.fit("download 'Back: cancel'", w(c.tr(Str::back_cancel)) + 3 + w("480/480 KB"), 128);
+        for (Str k : {Str::guide_updated, Str::up_to_date, Str::no_network, Str::download_failed,
+                      Str::guide_check_failed})
+            c.fit(std::string("toast '") + c.tr(k) + "'", w(c.tr(k)), 126);
         // Full-screen messages, centred.
         c.fit("message", w(c.tr(Str::installing)), 128);
         c.fit("message", w(c.tr(Str::battery_empty)), 128);

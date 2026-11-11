@@ -209,6 +209,7 @@ void scan() {
 void info(Info& out) {
     Lock lock;
     out = s_info;
+    out.saved = s_haveCreds;
 }
 
 void timeSync(bool on, const char* server) {

@@ -12,6 +12,10 @@
 #        UI: PS and RadioText in display form; ab is an A/B flag change, which clears the RadioText)
 #        ntp HH:MM   (an NTP sync at that UTC time on 2026-11-10; the clock then runs on the scenario time)
 #        set server TEXT   (the NTP server setting)
+#        set guide off   (no valid guide table; otherwise the prototype's sample, rows of EiBi B26)
+#        set wifi none   (no network configured: not joined and none saved)
+#        dl join | dl check | dl get DONE TOTAL   (download mode at a step; DONE and TOTAL in bytes)
+#        dl result updated|uptodate|nonet|failed|checkfailed   (a download result shown on home for 3 s)
 
 scenario splash
 @0 render t0000
@@ -97,7 +101,7 @@ render fine
 
 scenario home_seek
 press
-turn -4
+turn -5
 press
 press
 render
@@ -106,7 +110,7 @@ render stopped
 
 scenario home_seek_down
 press
-turn -4
+turn -5
 press
 turn 1
 press
@@ -122,7 +126,9 @@ render mute
 turn -1
 render settings
 turn -1
+turn -1
 render seek
+turn 1
 turn 1
 turn 1
 render wrap
@@ -210,7 +216,7 @@ render fm
 
 scenario seek_list
 press
-turn -4
+turn -5
 press
 render
 
@@ -228,7 +234,7 @@ press
 turn -3
 press
 render
-turn 6
+turn 7
 render about
 press
 render info
@@ -365,7 +371,7 @@ set wifi off
 press
 turn -3
 press
-turn 6
+turn 7
 press
 render
 
@@ -487,7 +493,7 @@ scenario language
 press
 turn -3
 press
-turn 5
+turn 6
 render setting
 press
 render list
@@ -508,7 +514,7 @@ render menu
 turn -3
 press
 render settings
-turn 6
+turn 7
 press
 render about
 
@@ -829,7 +835,7 @@ ntp 13:05
 press
 turn -3
 press
-turn 6
+turn 7
 press
 render
 
@@ -851,7 +857,7 @@ set lang ga
 press
 turn -3
 press
-turn 6
+turn 7
 press
 render about
 
@@ -864,3 +870,187 @@ press
 render lt_sos
 set lang hu
 render hu_sos
+
+# The frequency guide. Home: the on-air name in place of the band and mode once the clock is set; several take turns
+# every 3 s; a long name is cut and the step left out; muted, the name stops before the Mute flag.
+scenario guide_home
+render unset
+ntp 13:05
+render
+@6000 render turn
+ntp 17:30
+@9000 render three_1
+@12000 render three_2
+@15000 render three_3
+ntp 00:10
+turn -24
+render long
+press
+turn -2
+press
+long
+render long_muted
+ntp 05:30
+render none_on_air
+
+# Station in AM: the frequency's entries, on air first and marked, the rest from the current time; details on a
+# press; it closes after 8 s without input.
+scenario guide_station
+ntp 17:30
+press
+turn 7
+press
+render
+turn 4
+render scrolled
+press
+render details_irr
+side
+turn -2
+press
+render details
+press
+render back
+@30000 render timeout
+
+scenario guide_station_unset
+press
+turn 7
+press
+render
+turn 1
+press
+render details
+
+scenario guide_station_none
+set guide off
+press
+turn 7
+press
+render
+
+scenario guide_station_nothing
+turn 1
+press
+turn 7
+press
+render
+long
+turn 30
+press
+turn 7
+press
+render far
+
+# The Station entry is in the main menu in every mode.
+scenario guide_menu
+press
+turn 7
+render
+
+# Settings > Guide: the season in Settings, the table and Update guide; without a network Update guide shows
+# No network and a press does nothing.
+scenario guide_settings
+ntp 13:05
+press
+turn -3
+press
+turn 5
+render
+press
+render list
+turn 1
+render back
+
+scenario guide_settings_nonet
+set wifi none
+press
+turn -3
+press
+turn 5
+press
+render
+press
+render pressed
+
+scenario guide_settings_none
+set guide off
+press
+turn -3
+press
+turn 5
+render
+press
+render list
+
+# Download mode: each step, then each result on home for 3 s.
+scenario guide_download
+dl join
+render join
+dl check
+render check
+dl get 0 191488
+render start
+dl get 94208 191488
+render get
+dl get 191488 191488
+render done
+
+scenario guide_result
+ntp 13:05
+@4000 dl result updated
+@4000 render updated
+@6900 render updated_late
+@7100 render gone
+dl result uptodate
+render uptodate
+dl result nonet
+render nonet
+dl result failed
+render failed
+dl result checkfailed
+render checkfailed
+
+# The guide screens in long languages.
+scenario guide_lang
+set lang hu
+ntp 17:30
+press
+turn 7
+press
+render station
+turn 2
+press
+render details
+long
+dl join
+render join
+dl get 94208 191488
+render get
+dl result checkfailed
+render result
+set lang lt
+dl check
+render lt_check
+dl get 94208 191488
+render lt_get
+dl result failed
+render lt_result
+
+scenario guide_lang_settings
+set lang de
+set wifi none
+press
+turn -3
+press
+turn 5
+render de
+press
+render de_list
+set lang lt
+render lt_list
+set lang ga
+render ga_list
+set guide off
+render ga_none
+

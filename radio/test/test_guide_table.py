@@ -8,6 +8,7 @@ usage: test_guide_table.py [OUT_DIR]   (OUT_DIR defaults to radio/build/host/gui
 import hashlib
 import json
 import os
+import re
 import struct
 import sys
 import zlib
@@ -270,6 +271,14 @@ def host_tables():
     with open(os.path.join(OUT, "rows.bin"), "wb") as f:
         f.write(t)
     check(g.verify(t)["entries"] == len(HOST_ROWS), "rows.bin for the host tests")
+    # The UI prototype's sample guide (GUIDE_CSV), converted for the golden replay: OUT/sample.bin.
+    proto = open(os.path.join(RADIO, "ui", "prototype.html"), encoding="utf-8").read()
+    block = re.search(r"const GUIDE_CSV = \[(.*?)\];", proto, re.S).group(1)
+    rows = [r.encode("latin-1") + b";;;;" for r in re.findall(r"'([^']*)'", block)]
+    t = g.build(entries(*rows), "B26", MODIFIED)
+    with open(os.path.join(OUT, "sample.bin"), "wb") as f:
+        f.write(t)
+    check(g.verify(t)["entries"] == 9, f"sample.bin: the prototype's {len(rows)} rows, one duplicate")
 
 
 def main():

@@ -5,9 +5,11 @@
 #include <string>
 
 #include "clock_core.h"
+#include "guide_core.h"
 #include "i18n_strings.h"
 #include "radio_model.h"
 #include "ui.h"
+#include "util.h"
 
 struct Sim {
     static constexpr uint32_t kBoot = 1000;  // power-on time, as in tools/gen_goldens.py
@@ -19,6 +21,16 @@ struct Sim {
     std::string ps, rt;
     clk::Core clock;  // monotonic time: the scenario time plus kBoot, as the prototype's clock
     gfx::Frame frame;
+    // The prototype's sample guide, converted by radio/test/test_guide_table.py, and the lookup for the tuned
+    // frequency.
+    std::string table = readFile(t::root() + "/radio/build/host/guide/sample.bin");
+    guide::Info info;
+    guide::Hits hits;
+    bool guideOn = true;
+    // Download mode at a step, drawn in place of the UI.
+    bool downloading = false;
+    ui::Download dl;
+    int64_t commands[64] = {};  // how often each radio::Cmd was emitted
 
     Sim() {
         radio::defaults(s);
@@ -35,7 +47,20 @@ struct Sim {
         st.netCount = 3;
         st.battery = 87;
         st.version = "2026.46.0";
+        guide::check(guide::MemSource(table.data(), table.size()), table.size(), info);
+        st.guide = &info;
+        st.hits = &hits;
         ui.begin(kBoot);
+    }
+
+    void guideOff() {
+        guideOn = false;
+        st.guide = nullptr;
+    }
+
+    void wifiNone() {
+        wifiOff();
+        st.netSaved = false;
     }
 
     void wifiOff() {
@@ -61,6 +86,7 @@ struct Sim {
     void apply(const ui::Output& o) {
         for (int i = 0; i < o.n; i++) {
             const radio::Command& c = o.cmds[i];
+            commands[static_cast<int>(c.cmd)]++;
             switch (c.cmd) {
                 case radio::Cmd::Seek:
                     st.seeking = true;
@@ -69,8 +95,10 @@ struct Sim {
                 case radio::Cmd::SeekStop: st.seeking = false; break;
                 case radio::Cmd::Lamp: st.lamp = static_cast<radio::Lamp>(c.v); break;
                 case radio::Cmd::NtpServer: radio::setNtpServer(s, ui.serverText()); break;
+                case radio::Cmd::GuideUpdate: break;
                 case radio::Cmd::Join:
                     std::strncpy(ssid, ui.joinSsid(), sizeof ssid - 1);
+                    st.netSaved = true;
                     st.joined = true;
                     st.ip = "192.168.0.57";
                     break;
@@ -85,6 +113,10 @@ struct Sim {
     void tick(uint32_t t) {
         st.utcMs = clock.utcMs(kBoot + t);
         st.syncAgeMs = clock.syncAgeMs(kBoot + t);
+        if (guideOn && !radio::isFm(s.mode))
+            guide::lookup(guide::MemSource(table.data(), table.size()), info, s.hz, st.utcMs, hits);
+        else
+            hits.n = 0;
         ui::Output o;
         ui.tick(kBoot + t, s, st, o);
         apply(o);
@@ -99,7 +131,10 @@ struct Sim {
 
     const gfx::Frame& render(uint32_t t) {
         tick(t);
-        ui.render(frame, kBoot + t, s, st);
+        if (downloading)
+            ui::drawDownload(frame, s.lang, dl);
+        else
+            ui.render(frame, kBoot + t, s, st);
         return frame;
     }
 };

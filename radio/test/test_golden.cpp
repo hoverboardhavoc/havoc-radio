@@ -72,10 +72,31 @@ TEST(goldens) {
         } else if (op == "set") {
             if (w[1] == "bars") sim->st.bars = static_cast<uint8_t>(std::stoi(w[2]));
             else if (w[1] == "ssb") sim->st.ssb = w[2] == "1";
+            else if (w[1] == "wifi" && w[2] == "none") sim->wifiNone();
             else if (w[1] == "wifi") sim->wifiOff();
+            else if (w[1] == "guide" && w[2] == "off") sim->guideOff();
             else if (w[1] == "lang") sim->setLang(w[2].c_str());
             else if (w[1] == "server") std::snprintf(sim->s.ntpServer, sizeof sim->s.ntpServer, "%s", w[2].c_str());
             else t::fail(__FILE__, __LINE__, "unknown set " + w[1]);
+        } else if (op == "dl") {
+            // Download mode at a step, or a result on home, as tools/gen_goldens.py.
+            sim->tick(now);
+            if (w[1] == "result") {
+                const std::pair<const char*, i18n::Str> results[] = {
+                    {"updated", i18n::Str::guide_updated}, {"uptodate", i18n::Str::up_to_date},
+                    {"nonet", i18n::Str::no_network}, {"failed", i18n::Str::download_failed},
+                    {"checkfailed", i18n::Str::guide_check_failed}};
+                sim->downloading = false;
+                for (const auto& r : results)
+                    if (w[2] == r.first) sim->ui.result(i18n::tr(sim->s.lang, r.second), Sim::kBoot + now);
+            } else {
+                sim->downloading = true;
+                sim->dl.step = w[1] == "join" ? ui::Download::Step::Join
+                               : w[1] == "check" ? ui::Download::Step::Check : ui::Download::Step::Get;
+                sim->dl.ssid = sim->ssid;
+                sim->dl.done = w.size() > 3 ? std::stoul(w[2]) : 0;
+                sim->dl.total = w.size() > 3 ? std::stoul(w[3]) : 0;
+            }
         } else if (op == "ntp") {
             // An NTP sync at HH:MM UTC on 2026-11-10, as tools/gen_goldens.py.
             const int64_t day = 1794268800000LL;
