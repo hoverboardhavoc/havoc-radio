@@ -36,7 +36,7 @@ Slots s_slots(s_flash);
 SemaphoreHandle_t s_lock;
 volatile uint32_t s_generation = 1;  // changes with every switch
 
-Hits s_hits;
+Hits* s_hits;  // allocated by the first refresh(): the normal app's lookup, not needed in download mode
 bool s_am = false;
 struct Key {
     int32_t hz;
@@ -76,34 +76,41 @@ Info info() {
 
 const Hits& refresh(int32_t hz, bool am, int64_t utcMs) {
     const Key k{hz, utcMs >= 0 ? static_cast<int32_t>(utcMs / 60000) : -1, s_generation, am};
+    if (!s_hits) {
+        Lock lock;
+        s_hits = new Hits();
+    }
     if (k.hz == s_key.hz && k.minute == s_key.minute && k.generation == s_key.generation && k.am == s_key.am)
-        return s_hits;
+        return *s_hits;
     Lock lock;
     s_key = k;
     s_am = am;
     if (am && s_slots.active() >= 0)
-        lookup(s_slots.source(), s_slots.info(), hz, utcMs, s_hits);
+        lookup(s_slots.source(), s_slots.info(), hz, utcMs, *s_hits);
     else
-        s_hits.n = 0;
-    return s_hits;
+        s_hits->n = 0;
+    return *s_hits;
 }
 
 void withHits(void (*fn)(const Hits&, bool, void*), void* arg) {
     Lock lock;
-    fn(s_hits, s_am, arg);
+    if (!s_hits) s_hits = new Hits();
+    fn(*s_hits, s_am, arg);
 }
 
-Update::Update() : sector_(static_cast<uint8_t*>(std::malloc(kSector))), writer_(nullptr) {
-    if (sector_) writer_ = new (std::nothrow) Slots::Writer(s_slots, sector_);
-}
+Update::Update() : sector_(nullptr), writer_(nullptr) {}
 
 Update::~Update() {
     delete writer_;
     std::free(sector_);
 }
 
+// The 4 KB sector buffer comes from the heap only once a table arrives: in download mode, after the TLS handshakes.
 Err Update::begin(uint32_t length) {
-    if (!writer_ || !s_flash.part) return Err::Write;
+    if (!s_flash.part) return Err::Write;
+    if (!sector_) sector_ = static_cast<uint8_t*>(std::malloc(kSector));
+    if (sector_ && !writer_) writer_ = new (std::nothrow) Slots::Writer(s_slots, sector_);
+    if (!writer_) return Err::Write;
     return writer_->begin(length);
 }
 

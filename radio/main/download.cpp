@@ -117,6 +117,7 @@ void task(void*) {
         finish(guide::Result::NoNetwork);
         vTaskDelete(nullptr);
     }
+    ESP_LOGI(TAG, "joined, free heap %u", static_cast<unsigned>(esp_get_free_heap_size()));
     guide::Report rep;
     {
         guide::Update update;
