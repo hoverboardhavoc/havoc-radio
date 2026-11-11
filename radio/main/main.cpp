@@ -38,6 +38,7 @@ struct App {
     gfx::Frame frame, shown;
     rds::Decoder rds;
     char ps[rds::kPsBuf], rt[rds::kRtBuf];
+    scan::State scan;  // the guide scan, copied from the radio task each loop
 };
 App* s_app;
 bool s_netWanted = false;  // the splash has ended: start the network after the next frame
@@ -47,7 +48,8 @@ uint32_t millis() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
 uint8_t contrastRegister(int level) { return static_cast<uint8_t>(level * 17); }
 
-void handle(const ui::Output& out) {
+// Runs the UI's commands; `utcMs` is the clock's time for a guide scan's on-air rule.
+void handle(const ui::Output& out, int64_t utcMs) {
     for (int i = 0; i < out.n; i++) {
         const radio::Command& c = out.cmds[i];
         switch (c.cmd) {
@@ -57,6 +59,9 @@ void handle(const ui::Output& out) {
             case radio::Cmd::CancelInstall: web::decide(false); break;
             case radio::Cmd::SplashEnd: s_netWanted = true; break;
             case radio::Cmd::Lamp: lamp::setMode(static_cast<radio::Lamp>(c.v)); break;
+            case radio::Cmd::GuideScan: radio::startScan(static_cast<scan::Scope>(c.v), utcMs); break;
+            case radio::Cmd::GuideScanStop: radio::stopScan(false); break;
+            case radio::Cmd::GuideScanCancel: radio::stopScan(true); break;
             // Update guide and Update firmware: a request in NVS and a restart into download mode.
             case radio::Cmd::GuideUpdate:
             case radio::Cmd::FirmwareUpdate:
@@ -162,19 +167,23 @@ extern "C" void app_main() {
         const guide::Info guideInfo = guide::info();
         st.guide = &guideInfo;
         st.hits = &guide::refresh(s.hz, !radio::isFm(s.mode), clock.utcMs);
+        radio::scanState(s_app->scan);
+        st.scan = &s_app->scan;
+        st.guideString = guide::stringOf;
 
         radio::snapshot(s);
         for (int i = 0; i < q.n; i++) {
             ui::Output out;
             s_app->ui.event(q.ev[i], now, s, st, out);
-            handle(out);
+            handle(out, clock.utcMs);
             radio::snapshot(s);
             st.lamp = lamp::mode();
             st.hits = &guide::refresh(s.hz, !radio::isFm(s.mode), clock.utcMs);
+            radio::scanState(s_app->scan);
         }
         ui::Output out;
         s_app->ui.tick(now, s, st, out);
-        handle(out);
+        handle(out, clock.utcMs);
         if (web::takeConfirmRequest()) s_app->ui.confirmInstall(now);
         // POST /api/guide/update or /api/firmware/update stored the request and has answered: restart into download
         // mode.

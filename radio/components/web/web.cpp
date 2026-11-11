@@ -137,6 +137,34 @@ void guideJson(const guide::Hits& h, bool am, void* arg) {
     j.raw("]");
 }
 
+// The guide scan: null before the first since power-up, else its scope, the band scanned (null for Scan all), whether
+// it runs, the counts and the results strongest first with their names. A result that would not leave `reserve` bytes
+// for the rest of the state is left out.
+void scanJson(Json& j, size_t reserve) {
+    scan::State sc;
+    radio::scanState(sc);
+    if (sc.phase == scan::Phase::None) return j.raw("null");
+    j.raw("{\"scope\":\"%s\",\"band\":", sc.scope == scan::Scope::Band ? "band" : "all");
+    if (sc.band >= 0 && sc.band < radio::kBandCount)
+        j.str(radio::kBands[sc.band].name);
+    else
+        j.raw("null");
+    j.raw(",\"running\":%s,\"done\":%u,\"total\":%u,\"results\":[", sc.phase == scan::Phase::Running ? "true" : "false",
+          static_cast<unsigned>(sc.done), static_cast<unsigned>(sc.total));
+    // The longest result: a 64-byte name escaped to at most twice its length, and the fields.
+    constexpr size_t kResultMax = 2 * guide::kStrMax + 64;
+    char name[guide::kStrMax + 1];
+    for (int i = 0; i < sc.results.n && j.room() > kResultMax + reserve; i++) {
+        const scan::Result& r = sc.results.r[i];
+        guide::stringOf(sc.generation, r.name, name);
+        j.raw("%s{\"khz\":%u,\"rssi\":%u,\"snr\":%u,\"name\":", i ? "," : "", static_cast<unsigned>(r.khz),
+              static_cast<unsigned>(r.rssi), static_cast<unsigned>(r.snr));
+        j.str(name);
+        j.raw("}");
+    }
+    j.raw("]}");
+}
+
 void stateJson(Json& j, bool full) {
     radio::State s;
     radio::snapshot(s);
@@ -182,7 +210,9 @@ void stateJson(Json& j, bool full) {
     j.ms(now.lastSyncMs);
     j.raw(",\"sync\":%s,\"server\":", s.timeSync ? "true" : "false");
     j.str(s.ntpServer);
-    j.raw("},\"guide\":");
+    j.raw("},\"scan\":");
+    scanJson(j, 400);
+    j.raw(",\"guide\":");
     GuideOut out{j, 320};
     guide::withHits(guideJson, &out);
     if (full) {
@@ -418,6 +448,41 @@ esp_err_t postTime(httpd_req_t* req) {
     }
     cJSON_Delete(o);
     return ok ? sendState(req, false) : badRequest(req);
+}
+
+// ---- the guide scan ----
+
+esp_err_t scanFail(httpd_req_t* req, const char* status, const char* error) {
+    char b[64];
+    const int n = snprintf(b, sizeof b, "{\"error\":\"%s\"}", error);
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, b, n);
+}
+
+// {"scope": "band" | "all"}: starts a scan, answered with the state; 409 while one runs, in FM or (for the band)
+// outside a band, 400 without a guide.
+esp_err_t postScan(httpd_req_t* req) {
+    cJSON* o = body(req);
+    if (!o) return badRequest(req);
+    const char* scope = text(o, "scope");
+    const bool band = scope && !std::strcmp(scope, "band"), all = scope && !std::strcmp(scope, "all");
+    cJSON_Delete(o);
+    if (!band && !all) return badRequest(req);
+    if (!guide::info().valid) return scanFail(req, "400 Bad Request", "no guide");
+    switch (radio::startScan(band ? scan::Scope::Band : scan::Scope::All, clk::now().utcMs)) {
+        case radio::ScanStart::Ok: return sendState(req, false);
+        case radio::ScanStart::Busy: return scanFail(req, "409 Conflict", "scan running");
+        case radio::ScanStart::NotAm: return scanFail(req, "409 Conflict", "not in AM, LSB or USB");
+        case radio::ScanStart::NoBand: return scanFail(req, "409 Conflict", "not in a band");
+    }
+    return badRequest(req);
+}
+
+// Stops the scan running, with its results so far.
+esp_err_t delScan(httpd_req_t* req) {
+    radio::stopScan(false);
+    return sendState(req, false);
 }
 
 // ---- server-sent events ----
@@ -720,7 +785,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 24;
+    cfg.max_uri_handlers = 26;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -746,6 +811,8 @@ void start(const char* version) {
     handle("/api/guide/update", HTTP_POST, postGuideUpdate);
     handle("/api/firmware", HTTP_GET, getFirmware);
     handle("/api/firmware/update", HTTP_POST, postFirmwareUpdate);
+    handle("/api/scan", HTTP_POST, postScan);
+    handle("/api/scan", HTTP_DELETE, delScan);
     handle("/api/screen", HTTP_GET, getScreen);
     xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }

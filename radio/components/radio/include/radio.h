@@ -2,6 +2,7 @@
 #pragma once
 #include "radio_model.h"
 #include "rds.h"
+#include "scan_core.h"
 
 namespace radio {
 
@@ -28,6 +29,14 @@ void rdsState(rds::Decoder& out);
 int rdsGroups(rds::Raw* out, int max);
 // Battery empty: amplifier muted and the receiver powered down; the task stops.
 void shutdown();
+
+// The guide scan, run by the radio task: Scan band (the band holding the frequency) or Scan all, with the guide's
+// on-air rule at utcMs. Refused while one runs, in FM, and for the band outside one.
+enum class ScanStart : uint8_t { Ok, Busy, NotAm, NoBand };
+ScanStart startScan(scan::Scope scope, int64_t utcMs);
+// Stops the scan running with its results so far, or cancels it with none.
+void stopScan(bool cancel);
+void scanState(scan::State& out);
 
 // Signal bars from RSSI, by mode family.
 uint8_t barsFor(uint8_t rssi, bool fm);
