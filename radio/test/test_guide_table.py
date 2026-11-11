@@ -252,8 +252,29 @@ def damage(t):
     check(g.main(["--verify", path]) == 1, "--verify exits 1 on damage")
 
 
+# Rows for the firmware reader's host tests (radio/test/test_guide.cpp), written to OUT/rows.bin.
+HOST_ROWS = [
+    b"8998.9;0000-2400;;X;Too low;E;Eu;;;;",
+    b"8999;1100-1200;Mo-Fr;X;Weekday;E;Eu;;;;",
+    b"9000;1000-1100;;X;Ten;E;Eu;;;;",
+    b"9000;2300-0100;Tu;X;Tuesday night;E;NAm;;;;",
+    b"9000;0600-0700;irr;X;Irregular;E;Eu;;;;",
+    b"9000.5;1200-1300;We;X;Wednesday;F;Af;;;;",
+    b"9001;0000-2400;;X;All day;E;Eu;;;;",
+    b"9001.1;0000-2400;;X;Too high;E;Eu;;;;",
+] + [b"12000;%02d00-%02d30;;X;Hour %02d;E;Eu;;;;" % (h, h, h) for h in range(20)]
+
+
+def host_tables():
+    t = g.build(entries(*HOST_ROWS), "A26", MODIFIED)
+    with open(os.path.join(OUT, "rows.bin"), "wb") as f:
+        f.write(t)
+    check(g.verify(t)["entries"] == len(HOST_ROWS), "rows.bin for the host tests")
+
+
 def main():
     sizes = fixtures()
+    host_tables()
     days()
     times()
     rows()

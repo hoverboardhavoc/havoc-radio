@@ -9,6 +9,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "guide.h"
 #include "i18n_strings.h"
 #include "i2c_bus.h"
 #include "input.h"
@@ -90,6 +91,7 @@ extern "C" void app_main() {
     i2c::init();
     if (!ssd1306::init()) ESP_LOGE("main", "display not answering");
     store::init();
+    guide::start();
 
     radio::State s;
     radio::defaults(s);

@@ -9,7 +9,8 @@
 - the stub disassembles to the system_restart_core() sequence: Cache_Read_Disable(), the DPORT icache bits
   cleared, INTENABLE and LITBASE 0, rsync, a jump to the ROM reset vector;
 - the partition table and the regions follow radio/partitions.csv: the app at ota_0, 0x100000, linked for offset 0
-  of its 1 MB flash window; the rest of the first window is 0xFF and the installer stages it as erase-only;
+  of its 1 MB flash window; the starting guide, when the build fetched one, at 0x10000; the rest of the first window
+  is 0xFF and the installer stages it as erase-only;
 - the stock updater (core 3.0.2 Updater) accepts the image and stages it clear of the copy to 0x0;
 - the builder rejects an oversized image and an oversized bootloader.
 """
@@ -40,9 +41,11 @@ REAL_FLASH_SIZE = 4 << 20
 
 # radio/partitions.csv: (name, type, subtype, offset, size).
 PARTITIONS = [("nvs", 1, 0x02, 0x9000, 0x4000), ("otadata", 1, 0x00, 0xD000, 0x2000),
-              ("phy_init", 1, 0x01, 0xF000, 0x1000), ("ota_0", 0, 0x10, 0x100000, 0x100000),
+              ("phy_init", 1, 0x01, 0xF000, 0x1000), ("guide", 1, 0x40, 0x10000, 0xF0000),
+              ("ota_0", 0, 0x10, 0x100000, 0x100000),
               ("ota_1", 0, 0x11, 0x200000, 0x100000)]
 REGIONS = [0x0, 0x8000, 0xD000, 0x100000]  # bootloader, partition table, OTA data, app
+GUIDE_OFFSET = 0x10000             # the starting frequency guide, when the build fetched one
 APP_OFFSET = 0x100000
 FLASH_WINDOW = 0x100000            # the ESP8266 maps one 1 MB window of flash at 0x40200000
 FLASH_MAP = 0x40200000
@@ -196,8 +199,9 @@ def check_layout(image, files):
     """The partition table, the region offsets, the app's link offset and the free first window."""
     parts = read_partition_table(os.path.join(BUILD, "partition_table", "partition-table.bin"))
     check(parts == PARTITIONS, "partition table as radio/partitions.csv: %s" % parts)
-    check([off for off, _ in files] == REGIONS,
-          "regions at %s" % ", ".join("0x%x" % off for off, _ in files))
+    offsets = [off for off, _ in files]
+    check(offsets in (REGIONS, sorted(REGIONS + [GUIDE_OFFSET])),
+          "regions at %s" % ", ".join("0x%x" % off for off in offsets))
     app = dict(files).get(APP_OFFSET)
     if app is None:
         return
@@ -209,15 +213,16 @@ def check_layout(image, files):
     seg_addr = struct.unpack_from("<I", app, 8)[0]
     check(APP_OFFSET % FLASH_WINDOW == 0 and seg_addr == FLASH_MAP + 0x10,
           "app linked for offset 0 of its flash window: first segment at 0x%08x" % seg_addr)
-    first_free = max(p[3] + p[4] for p in PARTITIONS if p[3] < APP_OFFSET)
+    guide = dict(files).get(GUIDE_OFFSET)
+    first_free = mii.round_up(GUIDE_OFFSET + (os.path.getsize(guide) if guide else 0), 4096)
     check(all(b == 0xFF for b in image[first_free:APP_OFFSET]),
-          "free first window 0x%x..0x%x is 0xFF" % (first_free, APP_OFFSET))
+          "the guide partition after its starting table, 0x%x..0x%x, is 0xFF" % (first_free, APP_OFFSET))
 
     # The installer's split: blank sectors are erase-only, the staged data fits the stage partition.
     regions = make_stage.radio_flash().split_regions(0, image)
     gap = [r for r in regions if r["target"] <= first_free < r["target"] + r["length"]]
     check(len(gap) == 1 and gap[0]["erase"] and gap[0]["target"] + gap[0]["length"] == APP_OFFSET,
-          "installer: the free first window is in one erase-only region ending at 0x%x" % APP_OFFSET)
+          "installer: the rest of the first window is in one erase-only region ending at 0x%x" % APP_OFFSET)
     staged = sum(r["length"] for r in regions if not r["erase"])
     stage_size = make_stage.stage_partition()[1] - make_stage.HEADER_SIZE
     check(staged <= stage_size, "installer stages %d B of data regions, the stage holds %d B" % (staged, stage_size))
