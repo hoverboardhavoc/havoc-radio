@@ -16,3 +16,17 @@ add_custom_command(TARGET app POST_BUILD
         -DSLOTS=ota_0:${ota_0_size},ota_1:${ota_1_size}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/check_app_size.cmake
     VERBATIM)
+
+# The starting frequency guide, fetched from the data repository into the build directory and flashed at the guide
+# partition with the app (tools/fetch_guide.py). Without it the build continues and the radio starts with no guide.
+partition_table_get_partition_info(guide_offset "--partition-name guide" "offset")
+set(guide_table "${CMAKE_BINARY_DIR}/guide/stations.bin")
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/guide")
+idf_build_get_property(python PYTHON)
+execute_process(COMMAND ${python} "${CMAKE_CURRENT_SOURCE_DIR}/tools/fetch_guide.py" "${guide_table}")
+if(EXISTS "${guide_table}")
+    esptool_py_flash_project_args(guide ${guide_offset} "${guide_table}" FLASH_IN_PROJECT)
+else()
+    message(WARNING "No frequency guide: the install image carries none")
+endif()
+
