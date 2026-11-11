@@ -1,7 +1,8 @@
 name: Build
 
 # Builds and tests Havoc Radio and the Havoc Radio Installer on every push and pull request.
-# A tag vYYYY.WW.P (year, ISO week, patch) also publishes a release with the four binaries.
+# A tag vYYYY.WW.P (year, ISO week, patch) also publishes a release with the four binaries, and commits the app image
+# and its manifest to the firmware branch, where radios find it in Settings > Firmware > Update.
 
 on:
   push:
@@ -72,3 +73,7 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           sed "s/@VERSION@/$version/g" .github/release-notes.md > notes.md
           gh release create "$GITHUB_REF_NAME" dist/* --title "Havoc Radio $version" --notes-file notes.md
+
+      # The checkout's token pushes with the job's contents: write. The first release creates the branch.
+      - name: Firmware branch
+        run: python3 radio/tools/firmware_branch.py --image dist/havoc-radio.bin --version "${GITHUB_REF_NAME#v}" --push

@@ -65,6 +65,7 @@ test: $(HOST)/tests $(GEN)/i18n_strings.jsonl install-image
 	$(HOST)/tests
 	$(NODE) $(RADIO)/test/test_page.js $(ROOT)
 	$(PY) $(RADIO)/test/test_install_image.py
+	$(PY) $(RADIO)/test/test_firmware_branch.py
 	$(MAKE) installer-test
 
 # installer/SPEC.md, Tests 1 to 4.
