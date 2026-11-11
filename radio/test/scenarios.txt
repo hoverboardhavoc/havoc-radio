@@ -14,8 +14,11 @@
 #        set server TEXT   (the NTP server setting)
 #        set guide off   (no valid guide table; otherwise the prototype's sample, rows of EiBi B26)
 #        set wifi none   (no network configured: not joined and none saved)
-#        dl join | dl check | dl get DONE TOTAL   (download mode at a step; DONE and TOTAL in bytes)
-#        dl result updated|uptodate|nonet|failed|checkfailed   (a download result shown on home for 3 s)
+#        dl [fw] join | dl [fw] check | dl [fw] get DONE TOTAL   (download mode at a step, for the guide or with fw
+#        the firmware; DONE and TOTAL in bytes)
+#        dl fw prompt VERSION   (the firmware's install prompt offering VERSION, from that time)
+#        dl result updated|uptodate|nonet|failed|checkfailed|fwupdated|imagecheckfailed|cancelled   (a download
+#        result shown on home for 3 s)
 
 scenario splash
 @0 render t0000
@@ -234,7 +237,7 @@ press
 turn -3
 press
 render
-turn 7
+turn 8
 render about
 press
 render info
@@ -371,7 +374,7 @@ set wifi off
 press
 turn -3
 press
-turn 7
+turn 8
 press
 render
 
@@ -493,7 +496,7 @@ scenario language
 press
 turn -3
 press
-turn 6
+turn 7
 render setting
 press
 render list
@@ -514,7 +517,7 @@ render menu
 turn -3
 press
 render settings
-turn 7
+turn 8
 press
 render about
 
@@ -835,7 +838,7 @@ ntp 13:05
 press
 turn -3
 press
-turn 7
+turn 8
 press
 render
 
@@ -857,7 +860,7 @@ set lang ga
 press
 turn -3
 press
-turn 7
+turn 8
 press
 render about
 
@@ -1054,3 +1057,116 @@ render ga_list
 set guide off
 render ga_none
 
+
+# Settings > Firmware: the running version in Settings, Version and Update; without a network Update shows No network
+# and a press does nothing.
+scenario firmware_settings
+ntp 13:05
+press
+turn -3
+press
+turn 6
+render
+press
+render list
+turn 1
+render back
+
+scenario firmware_settings_nonet
+set wifi none
+press
+turn -3
+press
+turn 6
+press
+render
+press
+render pressed
+
+# Download mode for the firmware: each step, the install prompt, and a press going on to the download.
+scenario firmware_download
+dl fw join
+render join
+dl fw check
+render check
+dl fw prompt 2026.47.0
+render prompt
+turn 1
+render turned
+press
+render installing
+dl fw get 0 988160
+render start
+dl fw get 421888 988160
+render get
+dl fw get 988160 988160
+render done
+
+# The prompt's cancels: a long press, the side button, and 30 s without a press; Back during the download. Each
+# restarts the radio, and home shows Update cancelled.
+scenario firmware_prompt_long
+ntp 13:05
+dl fw prompt 2026.47.0
+long
+render
+@6000 render cancelled
+
+scenario firmware_prompt_side
+ntp 13:05
+dl fw prompt 2026.47.0
+sidehold
+@6000 render cancelled
+dl fw get 421888 988160
+side
+@9000 render back
+
+scenario firmware_prompt_timeout
+ntp 13:05
+dl fw prompt 2026.47.0
+@33100 render waiting
+@33200 render restart
+@36000 render cancelled
+
+# The results on home for 3 s.
+scenario firmware_result
+ntp 13:05
+@4000 dl result fwupdated
+@4000 render updated
+dl result uptodate
+render uptodate
+dl result imagecheckfailed
+render imagecheckfailed
+dl result cancelled
+render cancelled
+
+# The firmware screens in long languages.
+scenario firmware_lang
+set lang hu
+dl fw prompt 2026.47.0
+render prompt
+dl fw get 421888 988160
+render get
+dl result imagecheckfailed
+render result
+set lang lt
+dl fw prompt 2026.47.0
+render lt_prompt
+dl fw get 421888 988160
+render lt_get
+dl result fwupdated
+render lt_result
+
+scenario firmware_lang_settings
+set lang de
+set wifi none
+press
+turn -3
+press
+turn 6
+render de
+press
+render de_list
+set lang lt
+render lt_list
+set lang ga
+render ga_list

@@ -451,6 +451,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
                 copy(buf, sizeof buf, "--:--");
             add(tr(Str::time), buf, Act::Go, static_cast<int>(ListId::Time));
             add(tr(Str::guide), guideLoaded(st) ? st.guide->season : "", Act::Go, static_cast<int>(ListId::GuideSettings));
+            add(tr(Str::firmware), st.version, Act::Go, static_cast<int>(ListId::FirmwareSettings));
             add(tr(Str::language), i18n::kLangName[s.lang < i18n::kLangCount ? s.lang : 0], Act::Go,
                 static_cast<int>(ListId::Language));
             add(tr(Str::about), "", Act::Info, static_cast<int>(InfoId::About));
@@ -490,6 +491,13 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             cur_ = 1;
             break;
         }
+        // Settings > Firmware: the running version, not selectable, and Update, which needs a configured network.
+        case ListId::FirmwareSettings:
+            add(tr(Str::version), st.version, Act::None);
+            items_[count_ - 1].skip = true;
+            add(tr(Str::update), st.netSaved ? "" : tr(Str::no_network), Act::FirmwareUpdate);
+            cur_ = 1;
+            break;
         // Time: the sync switch, the server (cut to fit its row) and the age of the last sync, not selectable.
         case ListId::Time: {
             add(tr(Str::time_sync), s.timeSync ? tr(Str::on) : tr(Str::off), Act::ToggleTimeSync);
@@ -605,6 +613,9 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         }
         case Act::GuideUpdate:
             if (st.netSaved) out.push(Cmd::GuideUpdate);
+            return;
+        case Act::FirmwareUpdate:
+            if (st.netSaved) out.push(Cmd::FirmwareUpdate);
             return;
         case Act::Station:
             if (!radio::isFm(s.mode)) return openList(ListId::Guide, true, s, st);
@@ -1132,11 +1143,19 @@ void Ui::drawConfirm(Frame& f, const State& s) {
     for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
 }
 
-// Download mode: the title, the step, during the download a bar by bytes with KB at the right, and Back: cancel.
+// Download mode: the title, the step, during the download a bar by bytes with KB at the right, and Back: cancel. The
+// firmware's install prompt: the version offered, and what a press and a long press do.
 void drawDownload(Frame& f, int lang, const Download& d) {
     f.clear();
-    gfx::text(f, 0, 0, i18n::tr(lang, Str::updating_guide));
     char t[96];
+    if (d.step == Download::Step::Prompt) {
+        snprintf(t, sizeof t, i18n::tr(lang, Str::install_s), d.version);
+        gfx::text(f, 0, 0, t);
+        gfx::text(f, 0, 12, i18n::tr(lang, Str::confirm_press));
+        gfx::text(f, 0, 24, i18n::tr(lang, Str::confirm_long));
+        return;
+    }
+    gfx::text(f, 0, 0, i18n::tr(lang, d.firmware ? Str::updating_firmware : Str::updating_guide));
     if (d.step == Download::Step::Join)
         snprintf(t, sizeof t, i18n::tr(lang, Str::toast_joining), d.ssid);
     else
@@ -1151,6 +1170,18 @@ void drawDownload(Frame& f, int lang, const Download& d) {
         gfx::textR(f, 128, 24, t);
     }
     gfx::text(f, 0, 24, i18n::tr(lang, Str::back_cancel));
+}
+
+PromptAnswer promptAnswer(EventType e) {
+    switch (e) {
+        case EventType::Press: return PromptAnswer::Install;
+        case EventType::LongPress:
+        case EventType::Side:
+        case EventType::SideHold: return PromptAnswer::Cancel;
+        case EventType::Turn:
+        case EventType::HoldTurn: break;
+    }
+    return PromptAnswer::None;
 }
 
 void Ui::drawMessage(Frame& f) { gfx::text(f, (gfx::W - gfx::textW(message_)) >> 1, 12, message_); }

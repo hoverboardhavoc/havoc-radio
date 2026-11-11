@@ -52,15 +52,23 @@ struct Status {
     bool netSaved = true;    // a WiFi network is configured
 };
 
-// The download mode's screen (a boot of its own, see guide/download): the step, and the bytes while downloading.
+// The download mode's screen (a boot of its own, see components/download): the step, the bytes while downloading, and
+// the firmware's install prompt.
 struct Download {
-    enum class Step : uint8_t { Join, Check, Get };
+    enum class Step : uint8_t { Join, Check, Get, Prompt };
     Step step = Step::Join;
+    bool firmware = false;     // Updating firmware, else Updating guide
     const char* ssid = "";
+    const char* version = "";  // the version the prompt offers
     uint32_t done = 0;
     uint32_t total = 0;
 };
 void drawDownload(gfx::Frame& f, int lang, const Download& d);
+// The install prompt's answer to an input: a press installs; a long press or the side button (short or held)
+// cancels; anything else is no answer. 30 s without a press cancels as well.
+enum class PromptAnswer : uint8_t { None, Install, Cancel };
+PromptAnswer promptAnswer(EventType e);
+constexpr uint32_t kPromptMs = 30000;
 
 struct Output {
     static constexpr int kMax = 8;
@@ -73,7 +81,7 @@ struct Output {
 
 enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station, Lamp };
 enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Language, Time,
-                              Guide, GuideSettings };
+                              Guide, GuideSettings, FirmwareSettings };
 enum class AdjustId : uint8_t { Volume, Contrast };
 enum class InfoId : uint8_t { Wifi, About, GuideEntry };
 
@@ -193,7 +201,7 @@ private:
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
                                Bandwidth, Seek, Join, Language, Station, ToggleTimeSync, Server, Lamp, GuideEntry,
-                               GuideUpdate };
+                               GuideUpdate, FirmwareUpdate };
     struct Item {
         char t[48];
         char mid[14];

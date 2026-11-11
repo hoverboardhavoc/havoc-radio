@@ -119,6 +119,7 @@ enum class Cmd : uint8_t {
     TimeSync,     // v = 0/1
     NtpServer,    // the server typed in text entry
     GuideUpdate,  // Settings > Guide > Update guide: restart into download mode
+    FirmwareUpdate,  // Settings > Firmware > Update: restart into download mode
 };
 
 struct Command {
