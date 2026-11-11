@@ -59,6 +59,7 @@ OBJ := $(patsubst %.cpp,$(HOST)/obj/%.o,$(LIB_SRC) $(TEST_SRC)) $(GEN_SRC:.cpp=.
 .PHONY: test installer-test goldens check-goldens pngs setup firmware install-image installer clean
 
 test: $(HOST)/tests install-image
+	$(PY) $(RADIO)/test/test_guide_table.py $(HOST)/guide
 	$(HOST)/tests
 	$(NODE) $(RADIO)/test/test_page.js $(ROOT)
 	$(PY) $(RADIO)/test/test_install_image.py
