@@ -54,6 +54,13 @@ td.a button { padding: 2px 7px; }
 .mono { font-family: ui-monospace, Menlo, monospace; }
 .nosig { color: var(--muted); font-style: italic; }
 .af a { color: var(--accent); font-family: ui-monospace, Menlo, monospace; }
+.guide { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 6px; overflow-x: auto; }
+.guide th { text-align: left; font-weight: 600; color: var(--muted); font-size: 0.8rem; padding: 2px; }
+.guide td { font-size: 0.9rem; }
+.guide td:first-child, .guide td:nth-child(2) { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+.guide tr.on td { color: var(--accent); font-weight: 600; }
+#guideMsg { color: var(--muted); margin: 6px 0 0; }
+#guideMsg:empty { display: none; }
 </style>
 </head>
 <body>
@@ -70,6 +77,10 @@ td.a button { padding: 2px 7px; }
     <div class="meta"><span id="band"></span><span id="mode"></span><span><span data-t="web_signal"></span>
       <span class="bars" id="bars"></span> <span id="rssi"></span></span></div>
     <div class="rds" id="rds" hidden></div>
+    <div class="guide" id="guide" hidden>
+      <table><thead><tr><th data-t="time"></th><th data-t="web_days"></th><th data-t="web_name"></th>
+        <th data-t="language"></th><th data-t="web_target"></th></tr></thead><tbody id="guideRows"></tbody></table>
+    </div>
     <div class="row">
       <button id="down" type="button">&minus;</button>
       <input id="tuneIn" inputmode="decimal" size="10">
@@ -119,6 +130,18 @@ td.a button { padding: 2px 7px; }
     </div>
     <p id="timeMsg"></p>
     <div id="timeInfo"></div>
+  </section>
+
+  <section>
+    <h2 data-t="guide"></h2>
+    <div id="guideInfo" class="meta"></div>
+    <div class="row">
+      <button id="guideUpdate" type="button" class="primary" data-t="web_update"></button>
+      <button id="guideFrom" type="button" data-t="web_from_file"></button>
+      <input id="guideFile" type="file" accept=".bin" hidden>
+    </div>
+    <p id="guideMsg"></p>
+    <p class="meta">EiBi, <a href="http://www.eibispace.de/">eibispace.de</a>, by Eike Bierwirth</p>
   </section>
 
   <section>
@@ -186,6 +209,129 @@ function timeHtml(time, utcMs, now, zone, t) {
   ];
   return `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 }
+// ---- the frequency guide ----
+const GUIDE_BASE = 'https://raw.githubusercontent.com/hoverboardhavoc/havoc-radio-guide/main/v1/';
+const DAY_NAMES = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
+// EiBi's form of the day bits (bit 0 Monday): ranges of three or more days, single days joined with commas.
+function daysText(days) {
+  days &= 0x7F;
+  if (!days) return '';
+  let s = 0;
+  if ((days & 0x41) === 0x41 && days !== 0x7F) {
+    let back = 0, fwd = 0;
+    while (days >> (6 - back) & 1) back++;
+    while (days >> fwd & 1) fwd++;
+    if (back + fwd >= 3) s = 7 - back;
+  }
+  const out = [];
+  for (let i = 0; i < 7;) {
+    const d = (s + i) % 7;
+    if (!(days >> d & 1)) { i++; continue; }
+    let len = 1;
+    while (i + len < 7 && days >> ((s + i + len) % 7) & 1) len++;
+    const last = DAY_NAMES[(d + len - 1) % 7];
+    out.push(len >= 3 ? DAY_NAMES[d] + '-' + last : len === 2 ? DAY_NAMES[d] + ',' + last : DAY_NAMES[d]);
+    i += len;
+  }
+  return out.join(',');
+}
+const hhmm4 = m => pad2(Math.floor(m / 60)) + pad2(m % 60);
+// The cells of the Radio view's guide table for the state's `guide` entries: time, days, name, language, target.
+function guideRows(entries, t) {
+  return (entries || []).map(e => ({ on: e.on_air, cells: [`${hhmm4(e.start)}-${hhmm4(e.end)}`,
+    e.irregular ? t('irr') : e.days === 0x7F ? t('daily') : daysText(e.days), e.name, e.language, e.target] }));
+}
+// Fills the table body with the rows, the guide's text set with textContent only; on-air rows are marked.
+function renderGuide(tbody, entries, t, doc) {
+  tbody.textContent = '';
+  for (const r of guideRows(entries, t)) {
+    const tr = doc.createElement('tr');
+    if (r.on) tr.className = 'on';
+    for (const c of r.cells) { const td = doc.createElement('td'); td.textContent = c; tr.appendChild(td); }
+    tbody.appendChild(tr);
+  }
+}
+// The Settings > Guide card's line for GET /api/guide.
+function guideInfoText(g, t) {
+  if (!g || !g.entries) return t('no_guide');
+  return `EiBi ${g.season} · ${String(g.source_modified).slice(0, 10)} · ${fmt(t('web_entries'), g.entries)}`;
+}
+// SHA-256 of a Uint8Array as hex. The page is served over plain HTTP, where the browser offers no crypto.subtle.
+function sha256(bytes) {
+  const K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
+    0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6,
+    0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3,
+    0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e,
+    0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+    0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814,
+    0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+  const h = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const n = bytes.length, total = Math.ceil((n + 9) / 64) * 64, m = new Uint8Array(total);
+  m.set(bytes);
+  m[n] = 0x80;
+  const dv = new DataView(m.buffer);
+  dv.setUint32(total - 8, Math.floor(n / 0x20000000));
+  dv.setUint32(total - 4, (n * 8) >>> 0);
+  const w = new Uint32Array(64), ror = (x, k) => (x >>> k) | (x << (32 - k));
+  for (let o = 0; o < total; o += 64) {
+    for (let i = 0; i < 16; i++) w[i] = dv.getUint32(o + 4 * i);
+    for (let i = 16; i < 64; i++) {
+      const s0 = ror(w[i - 15], 7) ^ ror(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = ror(w[i - 2], 17) ^ ror(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, k] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (k + (ror(e, 6) ^ ror(e, 11) ^ ror(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
+      const t2 = ((ror(a, 2) ^ ror(a, 13) ^ ror(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      k = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
+    }
+    [a, b, c, d, e, f, g, k].forEach((v, i) => { h[i] = (h[i] + v) >>> 0; });
+  }
+  return h.map(v => v.toString(16).padStart(8, '0')).join('');
+}
+const kb = n => Math.round(n / 1024);
+// Update: the data repository's manifest, then, unless its SHA-256 is the radio's, the table with its length and
+// SHA-256 checked against the manifest, posted to the radio. `io` has fetch, post(bytes, sha256, onProgress) ->
+// {ok, text}, and status(text). `radio` is GET /api/guide. Returns 'offline', 'failed', 'uptodate', 'mismatch' or
+// 'updated'.
+async function updateGuide(radio, io, t) {
+  let m, bytes;
+  try {
+    const r = await io.fetch(GUIDE_BASE + 'manifest.json', { cache: 'no-store' });
+    if (!r.ok) { io.status(t('download_failed')); return 'failed'; }
+    m = await r.json();
+  } catch (e) { io.status(t('web_no_internet')); return 'offline'; }
+  if (m.format !== 1) { io.status(t('download_failed')); return 'failed'; }
+  if (radio && radio.sha256 === m.sha256) { io.status(t('up_to_date')); return 'uptodate'; }
+  try {
+    const r = await io.fetch(GUIDE_BASE + 'stations.bin', { cache: 'no-store' });
+    if (!r.ok) { io.status(t('download_failed')); return 'failed'; }
+    if (r.body && r.body.getReader) {
+      const parts = [], reader = r.body.getReader();
+      let got = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parts.push(value); got += value.length;
+        io.status(`${t('downloading')} ${kb(got)}/${kb(m.length)} KB`);
+      }
+      bytes = new Uint8Array(got);
+      let at = 0;
+      for (const p of parts) { bytes.set(p, at); at += p.length; }
+    } else {
+      bytes = new Uint8Array(await r.arrayBuffer());
+    }
+  } catch (e) { io.status(t('web_no_internet')); return 'offline'; }
+  if (bytes.length !== m.length || sha256(bytes) !== m.sha256) { io.status(t('web_mismatch')); return 'mismatch'; }
+  return sendGuide(bytes, m.sha256, io, t);
+}
+// Posts a table to the radio (From file: no SHA-256) and reports the result.
+async function sendGuide(bytes, sha, io, t) {
+  io.status(t('web_sending'));
+  const r = await io.post(bytes, sha, done => io.status(`${t('web_sending')} ${kb(done)}/${kb(bytes.length)} KB`));
+  io.status(r.ok ? t('guide_updated') : `${t('web_failed')}: ${r.text}`);
+  return r.ok ? 'updated' : 'failed';
+}
 // The Time card's controls: the switch posts {sync}, Save posts the server typed, Default an empty server (the
 // radio's default). `post(url, body)` sends it.
 function bindTime(el, post) {
@@ -220,6 +366,7 @@ async function loadStrings() {
   document.querySelectorAll('[data-t]').forEach(e => { e.textContent = t(e.dataset.t); });
   document.querySelectorAll('[data-ph]').forEach(e => { e.placeholder = t(e.dataset.ph); });
   document.documentElement.lang = lang || 'en';
+  $('guideInfo').textContent = guideInfoText(guideInfo, t);
   if (st) render(st);
 }
 
@@ -262,6 +409,8 @@ function render(s) {
   $('rssi').textContent = `${s.rssi} dBµV, ${s.snr} dB`;
   $('rds').hidden = !s.rds;
   $('rds').innerHTML = rdsHtml(s.rds, s.hz, t);
+  $('guide').hidden = !(s.guide && s.guide.length);
+  renderGuide($('guideRows'), s.guide, t, document);
   if (document.activeElement !== $('tuneIn')) $('tuneIn').value = s.mode === 'FM' ? (s.hz / 1e6).toFixed(2) : (s.hz / 1e3).toString();
   if (s.bands) fill($('bandSel'), s.bands, Math.max(0, s.bands.indexOf(s.band)));
   const modes = s.mode === 'FM' ? ['FM'] : s.ssb ? ['AM', 'LSB', 'USB'] : ['AM'];
@@ -333,8 +482,38 @@ $('upload').onclick = async () => {
   } catch (e) { $('otaMsg').textContent = t('web_failed'); }
 };
 
+// The Settings > Guide card.
+let guideInfo = null;
+async function loadGuide() {
+  try { guideInfo = await (await fetch('/api/guide')).json(); } catch (e) { guideInfo = null; }
+  $('guideInfo').textContent = guideInfoText(guideInfo, t);
+}
+// Posts a table with upload progress; the radio answers with GET /api/guide or 400 and the reason.
+function postGuide(bytes, sha, onProgress) {
+  return new Promise(resolve => {
+    const x = new XMLHttpRequest();
+    x.open('POST', '/api/guide');
+    if (sha) x.setRequestHeader('X-Guide-SHA256', sha);
+    x.upload.onprogress = e => onProgress(e.loaded);
+    x.onload = () => resolve({ ok: x.status === 200, text: x.responseText });
+    x.onerror = () => resolve({ ok: false, text: t('web_offline') });
+    x.send(bytes);
+  });
+}
+const guideIo = { fetch: (u, o) => fetch(u, o), post: postGuide, status: s => { $('guideMsg').textContent = s; } };
+$('guideUpdate').onclick = async () => { await updateGuide(guideInfo, guideIo, t); loadGuide(); };
+$('guideFrom').onclick = () => $('guideFile').click();
+$('guideFile').onchange = async () => {
+  const f = $('guideFile').files[0];
+  if (!f) return;
+  await sendGuide(new Uint8Array(await f.arrayBuffer()), null, guideIo, t);
+  $('guideFile').value = '';
+  loadGuide();
+};
+
 async function start() {
   render(await (await fetch('/api/state')).json());
+  loadGuide();
   openEvents(s => { render(s); $('status').textContent = ''; }, () => { $('status').textContent = t('web_offline'); });
 }
 start();

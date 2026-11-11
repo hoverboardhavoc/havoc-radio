@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <initializer_list>
 
 #include "cJSON.h"
@@ -15,6 +16,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "guide.h"
 #include "i18n_strings.h"
 #include "lwip/sockets.h"
 #include "net.h"
@@ -73,6 +75,7 @@ public:
     }
     const char* c_str() const { return b_; }
     size_t size() const { return len_; }
+    size_t room() const { return cap_ - 1 - len_; }
 
 private:
     char* b_;
@@ -100,6 +103,34 @@ void rdsJson(Json& j, const radio::State& s) {
     j.raw(",\"pty\":%d,\"tp\":%s,\"ta\":%s,\"af\":[", d.pty(), d.tp() ? "true" : "false", d.ta() ? "true" : "false");
     for (int i = 0; i < d.afCount(); i++) j.raw("%s%ld", i ? "," : "", static_cast<long>(d.afHz(i)));
     j.raw("]}");
+}
+
+// The guide entries for the tuned frequency in AM, LSB and USB, as the Station screen orders them; null in FM. An
+// entry that would not leave `reserve` bytes for the rest of the state is left out.
+struct GuideOut {
+    Json& j;
+    size_t reserve;
+};
+
+void guideJson(const guide::Hits& h, bool am, void* arg) {
+    auto* o = static_cast<GuideOut*>(arg);
+    Json& j = o->j;
+    if (!am) return j.raw("null");
+    j.raw("[");
+    // The longest entry: three 64-byte strings, each escaped to at most twice its length, and the fields.
+    constexpr size_t kEntryMax = 3 * 2 * guide::kStrMax + 160;
+    for (int i = 0; i < h.n && j.room() > kEntryMax + o->reserve; i++) {
+        const guide::Hit& e = h.hit[i];
+        j.raw("%s{\"name\":", i ? "," : "");
+        j.str(e.name);
+        j.raw(",\"start\":%u,\"end\":%u,\"days\":%u,\"irregular\":%s,\"language\":", e.e.start, e.e.end,
+              e.e.days & guide::kEveryDay, e.e.days & guide::kIrregular ? "true" : "false");
+        j.str(e.lang);
+        j.raw(",\"target\":");
+        j.str(e.target);
+        j.raw(",\"on_air\":%s}", e.onAir ? "true" : "false");
+    }
+    j.raw("]");
 }
 
 void stateJson(Json& j, bool full) {
@@ -147,7 +178,9 @@ void stateJson(Json& j, bool full) {
     j.ms(now.lastSyncMs);
     j.raw(",\"sync\":%s,\"server\":", s.timeSync ? "true" : "false");
     j.str(s.ntpServer);
-    j.raw("}");
+    j.raw("},\"guide\":");
+    GuideOut out{j, 320};
+    guide::withHits(guideJson, &out);
     if (full) {
         j.raw(",\"bands\":[");
         for (int i = 0; i < radio::kBandCount; i++) j.raw("%s\"%s\"", i ? "," : "", radio::kBands[i].name);
@@ -173,9 +206,11 @@ cJSON* body(httpd_req_t* req) {
     return cJSON_Parse(buf);
 }
 
+// One buffer for every state JSON: the handlers and the event push all run in the server task.
+char s_json[4864];
+
 esp_err_t sendState(httpd_req_t* req, bool full) {
-    static char buf[3840];
-    Json j(buf, sizeof buf);
+    Json j(s_json, sizeof s_json);
     stateJson(j, full);
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, j.c_str(), j.size());
@@ -426,8 +461,7 @@ Streams::Send sendEvent(int fd, void* arg) {
 
 void pushEvents(void*) {
     if (!s_streams.count()) return;
-    static char buf[3328];
-    Json j(buf, sizeof buf);
+    Json j(s_json, sizeof s_json);
     j.raw("event: state\ndata: ");
     stateJson(j, false);
     j.raw("\n\n");
@@ -446,6 +480,76 @@ void sseTask(void*) {
         vTaskDelay(pdMS_TO_TICKS(kPushIntervalMs));
         httpd_queue_work(s_server, pushEvents, nullptr);
     }
+}
+
+// ---- the frequency guide ----
+
+// {"season", "entries", "length", "sha256", "source_modified"} for the loaded table, or {"entries": 0}.
+esp_err_t sendGuide(httpd_req_t* req) {
+    const guide::Info i = guide::info();
+    char buf[256];
+    Json j(buf, sizeof buf);
+    if (!i.valid) {
+        j.raw("{\"entries\":0}");
+    } else {
+        char sha[65], when[24];
+        for (int k = 0; k < 32; k++) snprintf(sha + 2 * k, 3, "%02x", i.sha256[k]);
+        const time_t t = i.modified;
+        struct tm tm;
+        gmtime_r(&t, &tm);
+        strftime(when, sizeof when, "%Y-%m-%dT%H:%M:%SZ", &tm);
+        j.raw("{\"season\":");
+        j.str(i.season);
+        j.raw(",\"entries\":%u,\"length\":%u,\"sha256\":\"%s\",\"source_modified\":\"%s\"}",
+              static_cast<unsigned>(i.entries), static_cast<unsigned>(i.length), sha, when);
+    }
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, j.c_str(), j.size());
+}
+
+esp_err_t getGuide(httpd_req_t* req) { return sendGuide(req); }
+
+esp_err_t guideFail(httpd_req_t* req, const char* why) {
+    httpd_resp_set_status(req, "400 Bad Request");
+    return httpd_resp_send(req, why, std::strlen(why));
+}
+
+// The raw table, at most one slot, with an optional X-Guide-SHA256. It is written to the free slot and checked there;
+// the slots switch only when it passes, so a failed upload leaves the old table in use.
+esp_err_t postGuide(httpd_req_t* req) {
+    if (req->content_len == 0 || req->content_len > guide::kSlotSize) return guideFail(req, guide::errText(guide::Err::TooLong));
+    uint8_t sha[32];
+    bool haveSha = false;
+    char hex[72];
+    if (httpd_req_get_hdr_value_str(req, "X-Guide-SHA256", hex, sizeof hex) == ESP_OK) {
+        if (std::strlen(hex) != 64) return guideFail(req, "X-Guide-SHA256 is not 64 hex digits");
+        for (int k = 0; k < 32; k++) {
+            unsigned v;
+            if (std::sscanf(hex + 2 * k, "%2x", &v) != 1) return guideFail(req, "X-Guide-SHA256 is not 64 hex digits");
+            sha[k] = static_cast<uint8_t>(v);
+        }
+        haveSha = true;
+    }
+    guide::Update update;
+    guide::Err e = update.begin(req->content_len);
+    static uint8_t buf[1024];
+    size_t left = req->content_len;
+    while (e == guide::Err::Ok && left) {
+        const int r = httpd_req_recv(req, reinterpret_cast<char*>(buf), left < sizeof buf ? left : sizeof buf);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        if (r <= 0) {
+            e = guide::Err::Cut;
+            break;
+        }
+        e = update.add(buf, r);
+        left -= r;
+    }
+    if (e == guide::Err::Ok) e = update.finish(haveSha ? sha : nullptr);
+    if (e != guide::Err::Ok) {
+        ESP_LOGW(TAG, "guide upload refused: %s", guide::errText(e));
+        return guideFail(req, guide::errText(e));
+    }
+    return sendGuide(req);
 }
 
 // ---- firmware upload ----
@@ -516,7 +620,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 18;
+    cfg.max_uri_handlers = 20;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -537,6 +641,8 @@ void start(const char* version) {
     handle("/api/time", HTTP_POST, postTime);
     handle("/api/events", HTTP_GET, getEvents);
     handle("/api/ota", HTTP_POST, postOta);
+    handle("/api/guide", HTTP_GET, getGuide);
+    handle("/api/guide", HTTP_POST, postGuide);
     xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }
 
