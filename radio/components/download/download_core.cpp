@@ -147,28 +147,60 @@ int Response::line(char* out, int n) {
     return k;
 }
 
-bool Response::begin() {
+namespace {
+
+// A decimal number of up to 18 digits at p; the character after it in *end. -1 when there is none.
+int64_t number(const char* p, const char** end) {
+    int64_t v = 0;
+    int digits = 0;
+    for (; *p >= '0' && *p <= '9' && digits < 18; p++, digits++) v = v * 10 + (*p - '0');
+    *end = p;
+    return digits && !(*p >= '0' && *p <= '9') ? v : -1;
+}
+
+}  // namespace
+
+bool Response::head() {
     char l[128];
     if (line(l, sizeof l) < 0) return false;
     // "HTTP/1.1 200 OK"
     const char* sp = std::strchr(l, ' ');
     if (std::strncmp(l, "HTTP/1.", 7) || !sp) return false;
     status_ = std::atoi(sp + 1);
-    bool chunked = false;
     for (int lines = 0;; lines++) {
         const int n = line(l, sizeof l);
         if (n < 0 || lines > 100) return false;
         if (n == 0) break;
         if (const char* v = header(l, "content-length")) {
-            char* e;
-            const long long len = std::strtoll(v, &e, 10);
-            if (e == v || len < 0) return false;
-            length_ = len;
+            const char* e;
+            length_ = number(v, &e);
+            if (length_ < 0 || *e) return false;
         }
-        if (const char* v = header(l, "transfer-encoding")) chunked = std::strstr(v, "chunked") != nullptr;
+        if (const char* v = header(l, "transfer-encoding")) chunked_ = std::strstr(v, "chunked") != nullptr;
+        // "bytes 586000-854063/854064"; anything else leaves the range unknown.
+        if (const char* v = header(l, "content-range")) {
+            rangeFrom_ = rangeTo_ = rangeTotal_ = -1;
+            const char *e = v, *f, *t;
+            int64_t from, to, total;
+            if (!std::strncmp(v, "bytes ", 6) && (from = number(v + 6, &f)) >= 0 && *f == '-' &&
+                (to = number(f + 1, &t)) >= 0 && *t == '/' && (total = number(t + 1, &e)) >= 0 && !*e) {
+                rangeFrom_ = from;
+                rangeTo_ = to;
+                rangeTotal_ = total;
+            }
+        }
     }
     left_ = length_;
-    return status_ == 200 && length_ >= 0 && !chunked;
+    return true;
+}
+
+bool Response::begin() { return head() && status_ == 200 && length_ >= 0 && !chunked_; }
+
+Err Response::resume(uint32_t from, uint32_t total) {
+    if (!head() || status_ != 206 || chunked_) return Err::Read;
+    if (rangeFrom_ != from || rangeTotal_ != total || rangeTo_ + 1 != rangeTotal_ || length_ != rangeTotal_ - rangeFrom_)
+        return Err::Length;
+    return Err::Ok;
 }
 
 int Response::body(uint8_t* out, int n) {
@@ -181,7 +213,11 @@ int Response::body(uint8_t* out, int n) {
         pos_ += got;
     } else {
         got = h_.read(out, n);
-        if (got <= 0) return -1;  // cut off before Content-Length
+        if (got <= 0) {  // cut off before Content-Length
+            error_ = got;
+            left_ = 0;
+            return -1;
+        }
     }
     left_ -= got;
     return got;
@@ -221,7 +257,7 @@ namespace {
 // One manifest of at most 2 KB, parsed. Err::Read when it cannot be fetched, Err::Cut when cut off, Err::Magic when
 // it is not a flat JSON object.
 Err getManifest(Http& http, const char* path, Manifest& m) {
-    if (!http.open(path)) return Err::Read;
+    if (!http.open(path, 0)) return Err::Read;
     Response resp(http);
     if (!resp.begin() || resp.length() > static_cast<int64_t>(kManifestMax)) return Err::Read;
     char json[kManifestMax];
@@ -253,6 +289,38 @@ bool parseVersion(const char* s, uint32_t out[4]) {
         if (i == 4 || !(s = field(s, out[i]))) return false;
         if (!*s) return true;
         s++;
+    }
+}
+
+// The body of `path`, `total` bytes, handed to put(data, n) as it arrives. A body cut off after n bytes is asked for
+// again from n with a Range request, at most kResumes times; a cut before the first byte asks for the whole body
+// again. Err::Read when a request is refused or not answered as asked, Err::Length when the answer is not `total`
+// bytes or not the range asked for, Err::Cut when cut off once more than resumed; put's error otherwise.
+template <class Put>
+Err getBody(Http& http, const char* path, uint32_t total, Progress& progress, Put put) {
+    uint32_t done = 0;
+    for (int cuts = 0;;) {
+        if (!http.open(path, done)) return Err::Read;
+        Response resp(http);
+        if (done == 0) {
+            if (!resp.begin()) return Err::Read;
+            if (resp.length() != total) return Err::Length;
+        } else {
+            const Err e = resp.resume(done, total);
+            if (e != Err::Ok) return e;
+        }
+        uint8_t buf[512];
+        int n;
+        while ((n = resp.body(buf, sizeof buf)) > 0) {
+            const Err e = put(buf, n);
+            if (e != Err::Ok) return e;
+            done += n;
+            progress.bytes(done, total);
+        }
+        http.close();
+        if (n == 0) return Err::Ok;
+        progress.cut(done, total, ++cuts, resp.error());
+        if (cuts > kResumes) return Err::Cut;
     }
 }
 
@@ -295,24 +363,16 @@ Report fetchGuide(Http& http, guide::Sink& sink, const guide::Info& loaded, Prog
     const uint32_t total = static_cast<uint32_t>(m.length);
     progress.step(Step::Table);
     progress.bytes(0, total);
-    if (!http.open(kGuideTablePath)) return fail(Step::Table, Err::Read);
-    Response resp(http);
-    if (!resp.begin()) return fail(Step::Table, Err::Read);
-    if (resp.length() != m.length) return fail(Step::Table, Err::Length);
-    e = sink.begin(total);
+    bool begun = false;
+    e = getBody(http, kGuideTablePath, total, progress, [&](const uint8_t* data, int n) {
+        if (!begun) {  // the slot is erased once the answer's length is known to be the manifest's
+            begun = true;
+            const Err b = sink.begin(total);
+            if (b != Err::Ok) return b;
+        }
+        return sink.add(data, n);
+    });
     if (e != Err::Ok) return fail(Step::Table, e);
-    uint8_t buf[512];
-    uint32_t done = 0;
-    for (;;) {
-        const int n = resp.body(buf, sizeof buf);
-        if (n < 0) return fail(Step::Table, Err::Cut);
-        if (n == 0) break;
-        e = sink.add(buf, n);
-        if (e != Err::Ok) return fail(Step::Table, e);
-        done += n;
-        progress.bytes(done, total);
-    }
-    http.close();
     // The SHA-256 and every table check; then the slots switch.
     progress.step(Step::Check);
     e = sink.finish(m.sha256);
@@ -359,24 +419,13 @@ Report fetchFirmware(Http& http, Ota& ota, const char* running, const char* mani
     e = ota.begin(total);
     if (e != Err::Ok) return fail(Step::Image, e);
     begun = true;
-    if (!http.open(imagePath)) return fail(Step::Image, Err::Read);
-    Response resp(http);
-    if (!resp.begin()) return fail(Step::Image, Err::Read);
-    if (resp.length() != m.length) return fail(Step::Image, Err::Length);
+    // A resumed image carries on in the same hash and the same slot writes.
     guide::Sha256 hash;
-    uint8_t buf[512];
-    uint32_t done = 0;
-    for (;;) {
-        const int n = resp.body(buf, sizeof buf);
-        if (n < 0) return fail(Step::Image, Err::Cut);
-        if (n == 0) break;
-        hash.update(buf, n);
-        e = ota.write(buf, n);
-        if (e != Err::Ok) return fail(Step::Image, e);
-        done += n;
-        progress.bytes(done, total);
-    }
-    http.close();
+    e = getBody(http, imagePath, total, progress, [&](const uint8_t* data, int n) {
+        hash.update(data, n);
+        return ota.write(data, n);
+    });
+    if (e != Err::Ok) return fail(Step::Image, e);
     // The SHA-256, the SDK's image check, then the slot selected.
     progress.step(Step::Check);
     uint8_t sha[32];

@@ -1,9 +1,11 @@
 // The download mode's core with a fake transport. The guide: up to date, an update, a manifest of another format, a
-// length that does not match or exceeds a slot, a hash mismatch, a table failing its checks, a cut-off body. The
-// firmware, with a fake app slot: up to date, older, newer with the prompt confirmed and cancelled, no prompt from the
-// API, a length that does not match or exceeds the slot, a hash mismatch, an image the SDK's check refuses, a cut-off
-// body. The version comparison, the HTTP response head, the manifest parser, the request cleared before the download
-// starts, and last_update.
+// length that does not match or exceeds a slot, a hash mismatch, a table failing its checks, a cut-off body resumed
+// and one cut more often than resumed. The firmware, with a fake app slot: up to date, older, newer with the prompt
+// confirmed and cancelled, no prompt from the API, a length that does not match or exceeds the slot, a hash mismatch,
+// an image the SDK's check refuses, a cut-off body resumed once and 5 times, cut 6 times, cut before its first byte,
+// a 200 or a wrong Content-Range answering the Range request, the hash checked over the joined body. The version
+// comparison, the HTTP response head, the manifest parser, the request cleared before the download starts, and
+// last_update.
 #include <algorithm>
 #include <cstring>
 #include <map>
@@ -57,22 +59,56 @@ std::string response(const std::string& body, long contentLength = -2, const cha
     return h + "X-Fastly-Request-ID: 1234\r\n\r\n" + body;
 }
 
-// Serves canned responses by path, a few bytes at a time.
+// Serves canned responses by path, a few bytes at a time, and bodies by path with Range: a request from n is answered
+// with 206 and the rest from n (or as set below). The next `cuts` connections are cut after `cutAfter` body bytes with
+// `cutError`, as the radio's esp-tls read answers MBEDTLS_ERR_NET_RECV_FAILED.
 struct FakeHttp : download::Http {
-    std::map<std::string, std::string> responses;
+    std::map<std::string, std::string> responses, bodies;
     std::vector<std::string> opened;
+    std::vector<uint32_t> froms;  // each request's Range start, 0 for none
+    int cuts = 0;
+    size_t cutAfter = 0;
+    int cutError = -76;
+    // The answer to a Range request: its status, a shift of the Content-Range start, another total, another body.
+    const char* rangeStatus = "206 Partial Content";
+    long rangeShift = 0, rangeTotal = -1;
+    std::string rangeBody;
     std::string cur;
-    size_t pos = 0;
+    size_t pos = 0, stop = std::string::npos;
     int chunk = 700;
-    bool open(const char* path) override {
+    bool open(const char* path, uint32_t from) override {
         opened.push_back(path);
+        froms.push_back(from);
         auto it = responses.find(path);
-        if (it == responses.end()) return false;
-        cur = it->second;
+        size_t bodyLen;
+        if (it != responses.end()) {
+            cur = it->second;
+            bodyLen = 0;
+        } else if (bodies.count(path) && from == 0) {
+            cur = response(bodies[path]);
+            bodyLen = bodies[path].size();
+        } else if (bodies.count(path)) {
+            const std::string& whole = rangeBody.empty() ? bodies[path] : rangeBody;
+            const std::string rest = whole.substr(std::min<size_t>(from, whole.size()));
+            const long total = rangeTotal < 0 ? static_cast<long>(whole.size()) : rangeTotal;
+            const std::string range = "Content-Range: bytes " + std::to_string(from + rangeShift) + "-" +
+                                      std::to_string(total - 1) + "/" + std::to_string(total) + "\r\n";
+            cur = response(rest, -2, rangeStatus, std::strcmp(rangeStatus, "200 OK") ? range.c_str() : "");
+            bodyLen = rest.size();
+        } else {
+            return false;
+        }
         pos = 0;
+        stop = std::string::npos;
+        if (cuts > 0 && bodyLen) {
+            cuts--;
+            stop = cur.size() - bodyLen + cutAfter;
+        }
         return true;
     }
     int read(uint8_t* buf, int n) override {
+        if (pos >= stop) return cutError;
+        if (stop < cur.size() && static_cast<size_t>(n) > stop - pos) n = static_cast<int>(stop - pos);
         if (pos >= cur.size()) return 0;
         const size_t k = std::min<size_t>({static_cast<size_t>(n), cur.size() - pos, static_cast<size_t>(chunk)});
         std::memcpy(buf, cur.data() + pos, k);
@@ -106,6 +142,10 @@ struct Steps : download::Progress {
         last = done, total = t;
         updates++;
     }
+    void cut(uint32_t done, uint32_t t, int cut, int error) override {
+        log += "cut" + std::to_string(cut) + "@" + std::to_string(done) + "/" + std::to_string(t) + "(" +
+               std::to_string(error) + ") ";
+    }
 };
 
 struct Rig {
@@ -118,7 +158,7 @@ struct Rig {
         flash.place(0, old);
         slots.boot();
         http.responses[download::kGuideManifestPath] = response(manifest(fresh));
-        http.responses[download::kGuideTablePath] = response(fresh);
+        http.bodies[download::kGuideTablePath] = fresh;
     }
     download::Report run() {
         SlotSink sink(slots);
@@ -199,10 +239,13 @@ TEST(download_failures_leave_the_old_table) {
         CHECK(r.oldInUse());
     }
     {
-        Rig r;  // a body cut off before Content-Length
-        r.http.responses[download::kGuideTablePath] = response(r.fresh.substr(0, 90000), static_cast<long>(r.fresh.size()));
+        Rig r;  // a body cut off 6 times: 5 resumes, then the download fails
+        r.http.cuts = 6;
+        r.http.cutAfter = 15000;
         const download::Report rep = r.run();
         CHECK(rep.result == Result::Failed && rep.step == Step::Table && rep.err == Err::Cut);
+        CHECK_EQ(r.http.opened.size(), 7u);
+        CHECK(r.steps.log.find("cut6@90000/") != std::string::npos);
         CHECK(r.oldInUse());
         guide::Slots again(r.flash);
         again.boot();
@@ -245,7 +288,7 @@ TEST(download_without_a_loaded_table) {
 TEST(download_response_head) {
     FakeHttp http;
     http.responses["/a"] = "HTTP/1.1 200 OK\r\ncontent-length:  5\r\n\r\nhelloEXTRA";
-    http.open("/a");
+    http.open("/a", 0);
     download::Response a(http);
     CHECK(a.begin());
     CHECK_EQ(a.length(), 5);
@@ -256,7 +299,7 @@ TEST(download_response_head) {
     for (const char* bad : {"HTTP/1.1 301 Moved\r\nContent-Length: 0\r\n\r\n", "SSH-2.0\r\n\r\n", "HTTP/1.1 200 OK\r\n",
                             "HTTP/1.1 200 OK\r\nContent-Length: -4\r\n\r\n", ""}) {
         http.responses["/b"] = bad;
-        http.open("/b");
+        http.open("/b", 0);
         download::Response r(http);
         CHECK(!r.begin());
     }
@@ -486,7 +529,7 @@ struct FwRig {
     FwRig(const char* version = "2026.47.0") {
         download::firmwarePaths("firmware", manifestPath, imagePath);
         http.responses[manifestPath] = response(fwManifest(version, img));
-        http.responses[imagePath] = response(img);
+        http.bodies[imagePath] = img;
         http.chunk = 1460;
     }
     download::Report run(const char* running = "2026.46.0") {
@@ -574,13 +617,6 @@ TEST(firmware_failures_keep_the_running_firmware) {
         CHECK_STR(r.ota.log, "begin end ");
     }
     {
-        FwRig r;  // a body cut off before Content-Length
-        r.http.responses[r.imagePath] = response(r.img.substr(0, 400000), static_cast<long>(r.img.size()));
-        const download::Report rep = r.run();
-        CHECK(rep.result == Result::Failed && rep.step == Step::Image && rep.err == Err::Cut);
-        CHECK_STR(r.ota.log, "begin abort ");
-    }
-    {
         FwRig r;  // the slot cannot be erased or written
         r.ota.failBegin = true;
         CHECK(r.run().err == Err::Write);
@@ -592,7 +628,7 @@ TEST(firmware_failures_keep_the_running_firmware) {
     }
     {
         FwRig r;  // no image on the server, a manifest without a version or with a broken one, a 404, a zero length
-        r.http.responses.erase(r.imagePath);
+        r.http.bodies.erase(r.imagePath);
         CHECK(r.run().result == Result::Failed);
         CHECK_STR(r.ota.log, "begin abort ");
         r.http.responses[r.manifestPath] = response("{\"length\": 5, \"sha256\": \"" + std::string(64, '0') + "\"}");
@@ -621,4 +657,137 @@ TEST(firmware_manifest_version) {
     const std::string longer = "{\"version\": \"" + std::string(40, '1') + "\"}";
     CHECK(download::parseManifest(longer.data(), longer.size(), m));
     CHECK_STR(m.version, "");  // too long to be a version: none
+}
+
+TEST(download_guide_table_resumed) {
+    Rig r;
+    r.http.cuts = 2;
+    r.http.cutAfter = 40000;
+    const download::Report rep = r.run();
+    CHECK(rep.result == Result::Updated);
+    CHECK_EQ(r.slots.active(), 1);
+    CHECK_STR(r.slots.info().season, "B26");
+    const std::string n = std::to_string(r.fresh.size());
+    CHECK_STR(r.steps.log, "manifest table cut1@40000/" + n + "(-76) cut2@80000/" + n + "(-76) check ");
+    CHECK(r.http.froms == (std::vector<uint32_t>{0, 0, 40000, 80000}));
+}
+
+namespace {
+
+std::string cutLog(int cuts, uint32_t every, size_t total) {
+    std::string s;
+    for (int i = 1; i <= cuts; i++)
+        s += "cut" + std::to_string(i) + "@" + std::to_string(i * every) + "/" + std::to_string(total) + "(-76) ";
+    return s;
+}
+
+}  // namespace
+
+TEST(firmware_cut_once_resumed) {
+    FwRig r;
+    r.http.cuts = 1;
+    r.http.cutAfter = 586000;
+    const download::Report rep = r.run();
+    CHECK(rep.result == Result::Updated && rep.step == Step::Check && rep.err == Err::Ok);
+    CHECK(r.ota.image == r.img);  // the slot written once through, with no gap or repeat
+    CHECK_STR(r.ota.log, "begin end activate ");
+    CHECK_STR(r.steps.log, "manifest prompt image " + cutLog(1, 586000, r.img.size()) + "check ");
+    CHECK(r.http.froms == (std::vector<uint32_t>{0, 0, 586000}));
+    CHECK_STR(r.http.opened[2], "/hoverboardhavoc/havoc-radio/firmware/layout1/havoc-radio.bin");
+    CHECK_EQ(r.steps.last, r.img.size());
+}
+
+TEST(firmware_cut_five_times_resumed) {
+    FwRig r;
+    r.http.cuts = 5;
+    r.http.cutAfter = 100000;
+    const download::Report rep = r.run();
+    CHECK(rep.result == Result::Updated);
+    CHECK(r.ota.image == r.img);
+    CHECK_STR(r.steps.log, "manifest prompt image " + cutLog(5, 100000, r.img.size()) + "check ");
+    CHECK(r.http.froms == (std::vector<uint32_t>{0, 0, 100000, 200000, 300000, 400000, 500000}));
+}
+
+TEST(firmware_cut_six_times_fails) {
+    FwRig r;
+    r.http.cuts = 6;
+    r.http.cutAfter = 100000;
+    r.http.cutError = -0x6900;  // a receive timeout (MBEDTLS_ERR_SSL_WANT_READ) is a cut as well
+    const download::Report rep = r.run();
+    CHECK(rep.result == Result::Failed && rep.step == Step::Image && rep.err == Err::Cut);
+    CHECK_STR(r.ota.log, "begin abort ");
+    CHECK_EQ(r.http.opened.size(), 7u);  // the manifest, then the image and its 5 resumes
+    CHECK(r.steps.log.find("cut6@600000/988160(-26880) ") != std::string::npos);
+    CHECK(r.steps.log.find("check") == std::string::npos);
+}
+
+TEST(firmware_cut_before_the_first_byte) {
+    FwRig r;  // nothing received yet: the whole image is asked for again, without Range
+    r.http.cuts = 1;
+    r.http.cutAfter = 0;
+    const download::Report rep = r.run();
+    CHECK(rep.result == Result::Updated);
+    CHECK(r.ota.image == r.img);
+    CHECK(r.http.froms == (std::vector<uint32_t>{0, 0, 0}));
+    CHECK(r.steps.log.find("cut1@0/988160(-76) ") != std::string::npos);
+}
+
+TEST(firmware_resume_answer_checked) {
+    {
+        FwRig r;  // the Range request answered with the whole image and 200
+        r.http.cuts = 1;
+        r.http.cutAfter = 300000;
+        r.http.rangeStatus = "200 OK";
+        const download::Report rep = r.run();
+        CHECK(rep.result == Result::Failed && rep.step == Step::Image && rep.err == Err::Read);
+        CHECK_STR(r.ota.log, "begin abort ");
+        CHECK_EQ(r.ota.image.size(), 300000u);
+    }
+    for (long shift : {-1L, 1L, -300000L}) {
+        FwRig r;  // a Content-Range that does not start where the body was cut
+        r.http.cuts = 1;
+        r.http.cutAfter = 300000;
+        r.http.rangeShift = shift;
+        const download::Report rep = r.run();
+        CHECK(rep.result == Result::Failed && rep.step == Step::Image && rep.err == Err::Length);
+        CHECK_STR(r.ota.log, "begin abort ");
+    }
+    for (long delta : {-1L, 1L}) {
+        FwRig r;  // a Content-Range total that is not the manifest's length
+        r.http.cuts = 1;
+        r.http.cutAfter = 300000;
+        r.http.rangeTotal = static_cast<long>(r.img.size()) + delta;
+        const download::Report rep = r.run();
+        CHECK(rep.result == Result::Failed && rep.step == Step::Image && rep.err == Err::Length);
+        CHECK_STR(r.ota.log, "begin abort ");
+    }
+    {
+        // A 206 without a Content-Range, or with one that is not a byte range of a known total.
+        FakeHttp http;
+        const std::string rest(688160, 'x');
+        for (const char* range : {"", "Content-Range: bytes */988160\r\n", "Content-Range: bytes 300000-988159/*\r\n",
+                                  "Content-Range: items 300000-988159/988160\r\n"}) {
+            http.responses["/x"] = response(rest, -2, "206 Partial Content", range);
+            http.open("/x", 300000);
+            download::Response resp(http);
+            CHECK(resp.resume(300000, 988160) == Err::Length);
+        }
+        http.responses["/x"] = response(rest, -2, "206 Partial Content", "Content-Range: bytes 300000-988159/988160\r\n");
+        http.open("/x", 300000);
+        download::Response ok(http);
+        CHECK(ok.resume(300000, 988160) == Err::Ok);
+        CHECK_EQ(ok.length(), 688160);
+    }
+}
+
+TEST(firmware_hash_checked_over_the_joined_body) {
+    FwRig r;  // the rest from another image with the same length: every range matches, the SHA-256 does not
+    r.http.cuts = 1;
+    r.http.cutAfter = 400000;
+    r.http.rangeBody = r.img;
+    r.http.rangeBody[700000] ^= 1;
+    const download::Report rep = r.run();
+    CHECK(rep.result == Result::Failed && rep.step == Step::Check && rep.err == Err::Hash);
+    CHECK_STR(r.ota.log, "begin abort ");
+    CHECK_EQ(r.ota.image.size(), r.img.size());
 }

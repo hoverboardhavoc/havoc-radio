@@ -28,11 +28,12 @@ enum class Request : uint8_t { None, Guide, Firmware, FirmwareApi };
 enum class Kind : uint8_t { Guide, Firmware };
 inline Kind kindOf(Request r) { return r == Request::Guide ? Kind::Guide : Kind::Firmware; }
 
-// One HTTPS GET at a time: open() connects and sends the request; read() returns bytes of the response (status line
-// and headers included), 0 at its end, below 0 on an error or a receive timeout.
+// One HTTPS GET at a time: open() connects and sends the request, with `Range: bytes=<from>-` when `from` is above 0;
+// read() returns bytes of the response (status line and headers included), 0 at its end, below 0 on an error or a
+// receive timeout (on the radio the esp-tls/mbedTLS error).
 class Http {
 public:
-    virtual bool open(const char* path) = 0;
+    virtual bool open(const char* path, uint32_t from) = 0;
     virtual int read(uint8_t* buf, int n) = 0;
     virtual void close() = 0;
 
@@ -46,10 +47,16 @@ enum class Result : uint8_t { None, Updated, UpToDate, NoNetwork, Failed, CheckF
 enum class Step : uint8_t { Join, Manifest, Table, Check, Prompt, Image };
 const char* stepName(Step s);
 
+// A cut-off table or image body is resumed with a Range request at most this many times per download.
+constexpr int kResumes = 5;
+
 class Progress {
 public:
     virtual void step(Step s) = 0;
     virtual void bytes(uint32_t done, uint32_t total) = 0;
+    // The body was cut off after `done` of `total` bytes, the `cut`th time in this download (1 to kResumes + 1), with
+    // `error` the transport's answer (0 when the connection ended early).
+    virtual void cut(uint32_t done, uint32_t total, int cut, int error) = 0;
 
 protected:
     ~Progress() = default;
@@ -61,19 +68,29 @@ public:
     explicit Response(Http& h) : h_(h) {}
     // Reads the head. True for status 200 with a Content-Length and no chunked transfer encoding.
     bool begin();
+    // Reads the head of the answer to a Range request from `from`: Err::Ok for status 206 with a Content-Range of
+    // `from` to the end of `total` bytes, a matching Content-Length and no chunked transfer encoding; Err::Read for
+    // another status or a head that cannot be read; Err::Length for another range or total.
+    Err resume(uint32_t from, uint32_t total);
     int status() const { return status_; }
     int64_t length() const { return length_; }
     // Body bytes; 0 once Content-Length bytes have come, below 0 when the body is cut off.
     int body(uint8_t* buf, int n);
+    // The transport's answer at the cut: its error, or 0 when the connection ended early.
+    int error() const { return error_; }
 
 private:
+    bool head();                 // the status line and the headers of interest
     int line(char* out, int n);  // one header line without CR LF; -1 at an error
     Http& h_;
     uint8_t buf_[256];
     int pos_ = 0, fill_ = 0;
     int status_ = 0;
     int64_t length_ = -1;
+    bool chunked_ = false;
+    int64_t rangeFrom_ = -1, rangeTo_ = -1, rangeTotal_ = -1;  // Content-Range: bytes <from>-<to>/<total>
     int64_t left_ = 0;
+    int error_ = 0;
 };
 
 constexpr size_t kVersionMax = 24;
@@ -99,7 +116,7 @@ struct Report {
 };
 
 // The guide: the manifest (up to date when its SHA-256 is the loaded table's), the table into the free slot with its
-// length and SHA-256 checked against the manifest, and the table's own checks.
+// length and SHA-256 checked against the manifest, and the table's own checks. A cut-off table is resumed.
 Report fetchGuide(Http& http, guide::Sink& sink, const guide::Info& loaded, Progress& progress);
 
 // The inactive app slot (esp_ota_* on the radio).
@@ -126,8 +143,8 @@ protected:
 };
 
 // The firmware: the manifest (up to date unless its version is newer than `running`), the prompt when given, the
-// image streamed into the inactive slot with its length and SHA-256 checked against the manifest, the SDK's image
-// check, then the slot selected for the next boot.
+// image streamed into the inactive slot with its length and SHA-256 checked against the manifest (a cut-off image is
+// resumed), the SDK's image check, then the slot selected for the next boot.
 Report fetchFirmware(Http& http, Ota& ota, const char* running, const char* manifestPath, const char* imagePath,
                      Prompt* prompt, Progress& progress);
 

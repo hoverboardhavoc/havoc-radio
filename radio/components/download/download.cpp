@@ -99,11 +99,12 @@ void onEvent(void*, esp_event_base_t base, int32_t id, void*) {
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) xEventGroupSetBits(s_events, kGotIp);
 }
 
-// One HTTPS GET to raw.githubusercontent.com per connection, with SNI and a 15 s receive timeout.
+// One HTTPS GET to raw.githubusercontent.com per connection, with SNI and a 15 s receive timeout; a resumed body's
+// request asks for its rest with Range.
 class TlsHttp : public Http {
 public:
     ~TlsHttp() { close(); }
-    bool open(const char* path) override {
+    bool open(const char* path, uint32_t from) override {
         close();
         tls_ = esp_tls_init();
         if (!tls_) return false;
@@ -114,10 +115,12 @@ public:
             return false;
         }
         ESP_LOGI(TAG, "connected, free heap %u", freeHeap());
-        char req[256];
+        char range[40] = "";
+        if (from) std::snprintf(range, sizeof range, "Range: bytes=%u-\r\n", static_cast<unsigned>(from));
+        char req[288];
         const int n = snprintf(req, sizeof req,
-                               "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: havoc-radio\r\nConnection: close\r\n\r\n",
-                               path, kHost);
+                               "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: havoc-radio\r\n%sConnection: close\r\n\r\n",
+                               path, kHost, range);
         for (int sent = 0; sent < n;) {
             const ssize_t w = esp_tls_conn_write(tls_, req + sent, n - sent);
             if (w <= 0) {
@@ -130,8 +133,7 @@ public:
     }
     int read(uint8_t* buf, int n) override {
         if (!tls_) return -1;
-        const ssize_t r = esp_tls_conn_read(tls_, buf, n);
-        return r < 0 ? -1 : static_cast<int>(r);
+        return static_cast<int>(esp_tls_conn_read(tls_, buf, n));  // below 0: the esp-tls/mbedTLS error
     }
     void close() override {
         if (tls_) esp_tls_conn_delete(tls_);
@@ -182,6 +184,11 @@ public:
     void bytes(uint32_t done, uint32_t total) override {
         s_total = total;
         s_done = done;
+    }
+    void cut(uint32_t done, uint32_t total, int cut, int error) override {
+        ESP_LOGW(TAG, "cut %d after %u of %u bytes, error %d (-0x%04x), free heap %u; %s", cut, static_cast<unsigned>(done),
+                 static_cast<unsigned>(total), error, static_cast<unsigned>(-error), freeHeap(),
+                 cut <= kResumes ? "resuming" : "no resumes left");
     }
 };
 
