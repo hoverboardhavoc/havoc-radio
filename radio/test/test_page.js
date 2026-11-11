@@ -3,7 +3,7 @@
 // fields decoded from the 99.5 MHz bench capture), the Radio, Settings and Screen views by the location hash, the
 // Screen view's PBM reader and drawing, the header clock, the Time card and its controls posting /api/time, and the
 // frequency guide: the Radio view's table, the Settings > Guide card's update against a fake manifest and table, and
-// From file; the event stream's reopening.
+// From file; the event stream's reopening; the Firmware card's Check for update and its line from GET /api/firmware.
 //
 //   node test_page.js ROOT
 "use strict";
@@ -19,7 +19,8 @@ const lib = page.match(/<script id="lib">([\s\S]*?)<\/script>/);
 assert(lib, 'no <script id="lib"> in the page');
 const ctx = vm.createContext({});
 vm.runInContext(lib[1] + "\n;Object.assign(globalThis, { rdsHtml, showView, clockHtml, timeHtml, ageText, bindTime, " +
-  "daysText, guideRows, renderGuide, guideInfoText, sha256, updateGuide, sendGuide, GUIDE_BASE, openEvents, pbm, drawScreen });", ctx);
+  "daysText, guideRows, renderGuide, guideInfoText, sha256, updateGuide, sendGuide, GUIDE_BASE, openEvents, " +
+  "firmwareText, checkFirmware, pbm, drawScreen });", ctx);
 // The page's other script must at least compile.
 for (const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
 
@@ -259,5 +260,22 @@ async function flow(radio, opts, postOk = true) {
   const io = { status: s => log.push(s), post: async (b, sha) => { posts.push([b.length, sha]); return { ok: true, text: "" }; } };
   eq(await ctx.sendGuide(tableBytes, null, io, t), "updated", "From file");
   eq(JSON.stringify(posts), JSON.stringify([[tableBytes.length, null]]), "From file posts the file as it is");
+  // The Firmware card: the line before a check, after one of each result, and after a guide download.
+  const note = "The radio restarts to check for a newer version and installs it without asking.";
+  eq(ctx.firmwareText({ version: "2026.46.0", slot: "ota_0" }, t), note, "no check since power-up");
+  eq(ctx.firmwareText(null, t), note, "no answer from GET /api/firmware");
+  const last = (result, kind = "firmware") => ({ version: "2026.47.0", slot: "ota_1",
+    last_update: { kind, result, step: "check", lowest_heap: 16384 } });
+  eq(ctx.firmwareText(last("up to date"), t), note + " Last check: Up to date (2026.47.0).", "up to date");
+  eq(ctx.firmwareText(last("updated"), t), note + " Last check: Firmware updated (2026.47.0).", "updated");
+  eq(ctx.firmwareText(last("check failed"), t), note + " Last check: Image check failed (2026.47.0).", "check failed");
+  eq(ctx.firmwareText(last("cancelled"), t), note + " Last check: Update cancelled (2026.47.0).", "cancelled");
+  eq(ctx.firmwareText(last("updated", "guide"), t), note, "a guide download is not a firmware check");
+  const answer = status => async () => ({ status });
+  eq(await ctx.checkFirmware(answer(202), t), "The radio is checking for an update. This page reconnects when it is back.",
+    "202: the radio restarts");
+  eq(await ctx.checkFirmware(answer(409), t), "No network", "409: no network configured");
+  eq(await ctx.checkFirmware(answer(500), t), "Failed", "another status");
+  eq(await ctx.checkFirmware(async () => { throw new TypeError("Failed to fetch"); }, t), "No connection", "no connection");
   console.log(`page: ${checks} checks, 0 failures`);
 })().catch(e => { console.error(e); process.exit(1); });
