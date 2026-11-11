@@ -3,7 +3,8 @@
 // fields decoded from the 99.5 MHz bench capture), the Radio, Settings and Screen views by the location hash, the
 // Screen view's PBM reader and drawing, the header clock, the Time card and its controls posting /api/time, and the
 // frequency guide: the Radio view's table, the Settings > Guide card's update against a fake manifest and table, and
-// From file; the event stream's reopening; the Firmware card's Check for update and its line from GET /api/firmware.
+// From file; the event stream's reopening; the Firmware card's Check for update and its line from GET /api/firmware;
+// the Scan card: starting and stopping a scan, the progress line, the result table and a row press tuning.
 //
 //   node test_page.js ROOT
 "use strict";
@@ -20,7 +21,7 @@ assert(lib, 'no <script id="lib"> in the page');
 const ctx = vm.createContext({});
 vm.runInContext(lib[1] + "\n;Object.assign(globalThis, { rdsHtml, showView, clockHtml, timeHtml, ageText, bindTime, " +
   "daysText, guideRows, renderGuide, guideInfoText, sha256, updateGuide, sendGuide, GUIDE_BASE, openEvents, " +
-  "firmwareText, checkFirmware, pbm, drawScreen });", ctx);
+  "firmwareText, checkFirmware, scanText, renderScan, bindScan, pbm, drawScreen });", ctx);
 // The page's other script must at least compile.
 for (const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
 
@@ -277,5 +278,45 @@ async function flow(radio, opts, postOk = true) {
   eq(await ctx.checkFirmware(answer(409), t), "No network", "409: no network configured");
   eq(await ctx.checkFirmware(answer(500), t), "Failed", "another status");
   eq(await ctx.checkFirmware(async () => { throw new TypeError("Failed to fetch"); }, t), "No connection", "no connection");
+  // The Scan card: Scan band, Scan all and Stop send /api/scan; a refusal is shown, an accepted request clears it.
+  const sent = [], msgs = [];
+  let status = 200;
+  const buttons = { band: {}, all: {}, stop: {} };
+  ctx.bindScan(buttons, async (method, body) => { sent.push(method + " " + JSON.stringify(body)); return status; },
+    s => msgs.push(s), t);
+  await buttons.band.onclick();
+  await buttons.all.onclick();
+  await buttons.stop.onclick();
+  eq(sent.join("|"), 'POST {"scope":"band"}|POST {"scope":"all"}|DELETE undefined', "Scan band, Scan all and Stop");
+  status = 409;
+  await buttons.all.onclick();
+  status = 400;
+  await buttons.band.onclick();
+  eq(JSON.stringify(msgs), JSON.stringify(["", "", "", "Failed", "No guide"]), "accepted, busy or in FM, no guide");
+  // The line: progress while a scan runs, the last scan after it, Nothing heard without results.
+  const results = [{ khz: 6070, rssi: 48, snr: 21, name: "Channel 292" },
+    { khz: 5895, rssi: 41, snr: 17, name: "<b>Radio</b> & Co" }];
+  eq(ctx.scanText(null, t), "", "no scan since power-up");
+  eq(ctx.scanText({ scope: "band", band: "49m", running: true, done: 23, total: 58, results }, t), "Scanning 49m 23/58",
+    "progress of Scan band");
+  eq(ctx.scanText({ scope: "all", band: null, running: true, done: 0, total: 0, results: [] }, t), "Scanning all 0/0",
+    "Scan all while it counts");
+  eq(ctx.scanText({ scope: "band", band: "49m", running: false, done: 58, total: 58, results }, t), "Last scan: 49m 58/58",
+    "the last scan");
+  eq(ctx.scanText({ scope: "all", band: null, running: false, done: 12, total: 990, results: [] }, t),
+    "Last scan: all 12/990 · Nothing heard", "stopped early with nothing heard");
+  // The table: frequency, name, RSSI, SNR as text; the tuned row marked; a press tunes to the row's frequency.
+  const rows = node("tbody");
+  rows.children.push("a stale row");
+  const tuned = [];
+  ctx.renderScan(rows, { results }, 6070000, doc, hz => tuned.push(hz));
+  eq(rows.children.length, 2, "two result rows");
+  eq(rows.children.map(r => r.className).join("|"), "on|", "the tuned frequency's row marked");
+  eq(rows.children[1].children.map(c => c.textContent).join("|"), "5895|<b>Radio</b> & Co|41 dBµV|17 dB",
+    "cells as text, unescaped and not parsed");
+  rows.children[1].onclick();
+  eq(JSON.stringify(tuned), "[5895000]", "a row press tunes to its frequency");
+  ctx.renderScan(rows, null, 6070000, doc, () => {});
+  eq(rows.children.length, 0, "no rows without a scan");
   console.log(`page: ${checks} checks, 0 failures`);
 })().catch(e => { console.error(e); process.exit(1); });

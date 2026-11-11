@@ -62,6 +62,11 @@ td.a button { padding: 2px 7px; }
 .guide tr.on td { color: var(--accent); font-weight: 600; }
 #guideMsg { color: var(--muted); margin: 6px 0 0; }
 #guideMsg:empty { display: none; }
+#scanMsg { color: var(--muted); margin: 8px 0 0; }
+#scanMsg:empty { display: none; }
+.scan td:nth-child(2) { font-family: inherit; white-space: normal; }
+.scan td:nth-child(n+3) { white-space: nowrap; }
+.scan tbody tr { cursor: pointer; }
 #screen { display: block; width: 100%; image-rendering: pixelated; border-radius: 6px; }
 </style>
 </head>
@@ -89,6 +94,20 @@ td.a button { padding: 2px 7px; }
       <input id="tuneIn" inputmode="decimal" size="10">
       <button id="tune" type="button" class="primary" data-t="web_tune"></button>
       <button id="up" type="button">+</button>
+    </div>
+  </section>
+
+  <section id="scanCard" hidden>
+    <h2 data-t="web_scan"></h2>
+    <div class="row" style="margin-top:0">
+      <button id="scanBand" type="button" class="primary" data-t="scan_band"></button>
+      <button id="scanAll" type="button" data-t="scan_all"></button>
+      <button id="scanStop" type="button" data-t="web_stop" hidden></button>
+    </div>
+    <p id="scanMsg"></p>
+    <div class="guide scan" id="scanTable" hidden>
+      <table><thead><tr><th>kHz</th><th data-t="web_name"></th><th>RSSI</th><th>SNR</th></tr></thead>
+        <tbody id="scanRows"></tbody></table>
     </div>
   </section>
 
@@ -383,6 +402,38 @@ async function checkFirmware(post, t) {
   try { r = await post(); } catch (e) { return t('web_offline'); }
   return r.status === 202 ? t('web_checking') : r.status === 409 ? t('no_network') : t('web_failed');
 }
+// ---- the guide scan ----
+// The Scan card's line for the state's `scan` (null before the first since the radio's power-up): the progress while
+// one runs, else the last scan with its count, and Nothing heard when it kept no result.
+function scanText(sc, t) {
+  if (!sc) return '';
+  const scope = sc.band || t('all');
+  if (sc.running) return `${fmt(t('scanning_s'), scope)} ${sc.done}/${sc.total}`;
+  return `${t('last_scan')}: ${scope} ${sc.done}/${sc.total}` + (sc.results.length ? '' : ` · ${t('nothing_heard')}`);
+}
+// Fills the Scan card's table: frequency, name, RSSI and SNR, strongest first, the names set with textContent only. The
+// row of the tuned frequency `hz` is marked; a press on a row calls tune(hz) with its frequency.
+function renderScan(tbody, sc, hz, doc, tune) {
+  tbody.textContent = '';
+  for (const r of (sc && sc.results) || []) {
+    const tr = doc.createElement('tr');
+    if (Math.round(hz / 1000) === r.khz) tr.className = 'on';
+    for (const c of [String(r.khz), r.name, `${r.rssi} dBµV`, `${r.snr} dB`]) {
+      const td = doc.createElement('td'); td.textContent = c; tr.appendChild(td);
+    }
+    tr.onclick = () => tune(r.khz * 1000);
+    tbody.appendChild(tr);
+  }
+}
+// The Scan card's buttons: Scan band and Scan all post /api/scan with the scope, Stop deletes it. `send(method, body)`
+// sends the request and resolves to its status; `msg(text)` shows a refusal, no guide (400) or the radio busy, in FM
+// or outside a band (409), and is cleared ('') when the radio accepts.
+function bindScan(el, send, msg, t) {
+  const answer = status => msg(status === 200 ? '' : status === 400 ? t('no_guide') : t('web_failed'));
+  el.band.onclick = async () => answer(await send('POST', { scope: 'band' }));
+  el.all.onclick = async () => answer(await send('POST', { scope: 'all' }));
+  el.stop.onclick = async () => answer(await send('DELETE'));
+}
 // The Time card's controls: the switch posts {sync}, Save posts the server typed, Default an empty server (the
 // radio's default). `post(url, body)` sends it.
 function bindTime(el, post) {
@@ -408,6 +459,7 @@ function openEvents(onState, onOffline, onOpen) {
 <script>
 const $ = id => document.getElementById(id);
 let T = {}, lang = '', st = null;
+let scanNote = '';  // the Scan card's refusal, shown in place of its line until the radio accepts a request
 // The radio's UTC when the last state came, and the browser's clock then: the clock runs on between states.
 let clockBase = { utc: null, at: 0 };
 const radioUtc = () => clockBase.utc == null ? null : clockBase.utc + (Date.now() - clockBase.at);
@@ -464,6 +516,13 @@ function render(s) {
   $('rds').innerHTML = rdsHtml(s.rds, s.hz, t);
   $('guide').hidden = !(s.guide && s.guide.length);
   renderGuide($('guideRows'), s.guide, t, document);
+  // The Scan card in AM, LSB and USB; Scan band inside a band, Stop while a scan runs.
+  $('scanCard').hidden = s.mode === 'FM';
+  $('scanBand').hidden = !(s.bands && s.bands.includes(s.band));
+  $('scanStop').hidden = !(s.scan && s.scan.running);
+  $('scanMsg').textContent = scanNote || scanText(s.scan, t);
+  $('scanTable').hidden = !(s.scan && s.scan.results.length);
+  renderScan($('scanRows'), s.scan, s.hz, document, tuneTo);
   if (document.activeElement !== $('tuneIn')) $('tuneIn').value = s.mode === 'FM' ? (s.hz / 1e6).toFixed(2) : (s.hz / 1e3).toString();
   if (s.bands) fill($('bandSel'), s.bands, Math.max(0, s.bands.indexOf(s.band)));
   const modes = s.mode === 'FM' ? ['FM'] : s.ssb ? ['AM', 'LSB', 'USB'] : ['AM'];
@@ -517,6 +576,13 @@ $('vol').onchange = e => post('/api/volume', { volume: +e.target.value });
 $('mute').onchange = e => post('/api/volume', { mute: e.target.checked });
 $('presetAdd').onclick = () => { post('/api/presets', { action: 'add', name: $('presetName').value }); $('presetName').value = ''; };
 $('join').onclick = () => post('/api/wifi', { ssid: $('ssid').value, password: $('pass').value });
+bindScan({ band: $('scanBand'), all: $('scanAll'), stop: $('scanStop') }, async (method, body) => {
+  try {
+    const r = await fetch('/api/scan', { method, headers: { 'Content-Type': 'application/json' }, body: body && JSON.stringify(body) });
+    if (r.ok) render(await r.json());
+    return r.status;
+  } catch (e) { return 0; }
+}, s => { scanNote = s; $('scanMsg').textContent = s || scanText(st.scan, t); }, t);
 bindTime({ sync: $('timeSync'), server: $('server'), save: $('serverSave'), def: $('serverDefault') }, async (url, body) => {
   $('timeMsg').textContent = '';
   if (!(await post(url, body))) $('timeMsg').textContent = t('web_failed');
