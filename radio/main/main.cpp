@@ -174,6 +174,12 @@ extern "C" void app_main() {
         s_app->ui.tick(now, s, st, out);
         handle(out);
         if (web::takeConfirmRequest()) s_app->ui.confirmInstall(now);
+        // POST /api/guide/update stored the request and has answered: restart into download mode.
+        if (web::takeGuideRestart()) {
+            store::flush();
+            vTaskDelay(pdMS_TO_TICKS(200));  // the answer's last bytes leave the socket
+            esp_restart();
+        }
         if (power::empty()) powerOff(s, st);
 
         if (s.contrast != contrast) ssd1306::contrast(contrastRegister(contrast = s.contrast));

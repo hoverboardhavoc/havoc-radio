@@ -44,6 +44,7 @@ volatile ui::Download::Step s_step = ui::Download::Step::Join;
 volatile uint32_t s_done = 0, s_total = 0;
 volatile bool s_finished = false;
 volatile uint8_t s_result = 0;
+volatile guide::Step s_at = guide::Step::Join;  // the step the download is in, or ended in
 
 uint32_t millis() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
 
@@ -98,6 +99,7 @@ class Screen : public guide::Progress {
 public:
     void step(guide::Step s) override {
         s_step = s == guide::Step::Table ? ui::Download::Step::Get : ui::Download::Step::Check;
+        s_at = s;
         ESP_LOGI(TAG, "%s, free heap %u", guide::stepName(s), static_cast<unsigned>(esp_get_free_heap_size()));
     }
     void bytes(uint32_t done, uint32_t total) override {
@@ -128,12 +130,19 @@ void task(void*) {
     ESP_LOGI(TAG, "result %d at step %s, error %d (%s); lowest free heap %u", static_cast<int>(rep.result),
              guide::stepName(rep.step), static_cast<int>(rep.err), guide::errText(rep.err),
              static_cast<unsigned>(esp_get_minimum_free_heap_size()));
+    s_at = rep.step;
     finish(rep.result);
     vTaskDelete(nullptr);
 }
 
-[[noreturn]] void restart(uint8_t result) {
-    if (result) store::setGuideResult(result);
+// Stores the result for home (not for a cancel) and for GET /api/guide's last_update, then restarts.
+[[noreturn]] void restart(guide::Result result) {
+    guide::LastUpdate u;
+    u.result = result;
+    u.step = s_at;
+    u.lowestHeap = esp_get_minimum_free_heap_size();
+    store::setLastUpdate(u);
+    if (result != guide::Result::Cancelled) store::setGuideResult(static_cast<uint8_t>(result));
     esp_restart();
     for (;;) vTaskDelay(portMAX_DELAY);
 }
@@ -147,6 +156,7 @@ const char* resultText(int lang, uint8_t result) {
         case guide::Result::NoNetwork: return i18n::tr(lang, i18n::Str::no_network);
         case guide::Result::Failed: return i18n::tr(lang, i18n::Str::download_failed);
         case guide::Result::CheckFailed: return i18n::tr(lang, i18n::Str::guide_check_failed);
+        case guide::Result::Cancelled:
         case guide::Result::None: break;
     }
     return nullptr;
@@ -154,7 +164,7 @@ const char* resultText(int lang, uint8_t result) {
 
 void run(int lang) {
     ESP_LOGI(TAG, "guide download, free heap %u", static_cast<unsigned>(esp_get_free_heap_size()));
-    if (!store::loadWifi(s_ssid, sizeof s_ssid, s_pass, sizeof s_pass)) restart(static_cast<uint8_t>(guide::Result::NoNetwork));
+    if (!store::loadWifi(s_ssid, sizeof s_ssid, s_pass, sizeof s_pass)) restart(guide::Result::NoNetwork);
     input::start();
     s_events = xEventGroupCreate();
     tcpip_adapter_init();
@@ -183,13 +193,13 @@ void run(int lang) {
         for (int i = 0; i < q.n; i++)
             if (q.ev[i].type == ui::EventType::Side) {
                 ESP_LOGI(TAG, "cancelled");
-                restart(0);
+                restart(guide::Result::Cancelled);
             }
-        if (s_finished) restart(s_result);
+        if (s_finished) restart(static_cast<guide::Result>(s_result));
         if (now - start > kModeMs) {
             ESP_LOGW(TAG, "result %d: the mode took longer than %u s", static_cast<int>(guide::Result::Failed),
                      static_cast<unsigned>(kModeMs / 1000));
-            restart(static_cast<uint8_t>(guide::Result::Failed));
+            restart(guide::Result::Failed);
         }
         if (now - lastFrame >= kFrameMs) {
             lastFrame = now;

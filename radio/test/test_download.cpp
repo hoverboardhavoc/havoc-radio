@@ -278,20 +278,62 @@ TEST(download_manifest_parser) {
 
 TEST(download_request_cleared_first) {
     struct Flag : guide::RequestFlag {
-        bool set = true;
+        bool on = true;
         std::string log;
         bool get() override {
             log += "get ";
-            return set;
+            return on;
         }
+        void set() override { on = true; }
         void clear() override {
             log += "clear ";
-            set = false;
+            on = false;
         }
     } f;
     CHECK(guide::takeRequest(f));
     CHECK_STR(f.log, "get clear ");
-    CHECK(!f.set);
+    CHECK(!f.on);
     CHECK(!guide::takeRequest(f));  // after a crash and restart, no second download
     CHECK_STR(f.log, "get clear get ");
 }
+
+TEST(download_update_request_from_the_web) {
+    struct Flag : guide::RequestFlag {
+        bool on = false;
+        bool get() override { return on; }
+        void set() override { on = true; }
+        void clear() override { on = false; }
+    } f;
+    char body[64];
+    CHECK_EQ(guide::requestUpdate(false, f, body, sizeof body), 409);
+    CHECK_STR(body, "{\"error\":\"no network\"}");
+    CHECK(!f.on);  // nothing stored, nothing restarts
+    CHECK_EQ(guide::requestUpdate(true, f, body, sizeof body), 202);
+    CHECK(f.on);
+    CHECK(guide::takeRequest(f) && !f.on);
+}
+
+TEST(download_last_update_json) {
+    char out[128];
+    guide::LastUpdate u;
+    guide::lastUpdateJson(u, out, sizeof out);
+    CHECK_STR(out, "");  // before a run
+    const struct {
+        Result r;
+        guide::Step step;
+        const char* json;
+    } cases[] = {
+        {Result::Updated, guide::Step::Check, "{\"result\":\"updated\",\"step\":\"check\",\"lowest_heap\":9900}"},
+        {Result::UpToDate, guide::Step::Manifest, "{\"result\":\"up to date\",\"step\":\"manifest\",\"lowest_heap\":9900}"},
+        {Result::NoNetwork, guide::Step::Join, "{\"result\":\"no network\",\"step\":\"join\",\"lowest_heap\":9900}"},
+        {Result::Failed, guide::Step::Table, "{\"result\":\"download failed\",\"step\":\"table\",\"lowest_heap\":9900}"},
+        {Result::CheckFailed, guide::Step::Check, "{\"result\":\"check failed\",\"step\":\"check\",\"lowest_heap\":9900}"},
+        {Result::Cancelled, guide::Step::Table, "{\"result\":\"cancelled\",\"step\":\"table\",\"lowest_heap\":9900}"},
+    };
+    for (const auto& c : cases) {
+        u = {c.r, c.step, 9900};
+        guide::lastUpdateJson(u, out, sizeof out);
+        CHECK_STR(out, std::string("\"last_update\":") + c.json);
+    }
+}
+

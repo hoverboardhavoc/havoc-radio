@@ -1,5 +1,6 @@
 #include "guide_fetch.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -275,6 +276,39 @@ Report fetch(Http& http, Sink& sink, const Info& loaded, Progress& progress) {
     r.step = Step::Check;
     r.result = Result::Updated;
     return r;
+}
+
+int requestUpdate(bool netSaved, RequestFlag& f, char* body, size_t n) {
+    if (!netSaved) {
+        std::snprintf(body, n, "{\"error\":\"no network\"}");
+        return 409;
+    }
+    f.set();
+    std::snprintf(body, n, "{\"update\":\"requested\"}");
+    return 202;
+}
+
+const char* resultName(Result r) {
+    switch (r) {
+        case Result::Updated: return "updated";
+        case Result::UpToDate: return "up to date";
+        case Result::NoNetwork: return "no network";
+        case Result::Failed: return "download failed";
+        case Result::CheckFailed: return "check failed";
+        case Result::Cancelled: return "cancelled";
+        case Result::None: break;
+    }
+    return nullptr;
+}
+
+void lastUpdateJson(const LastUpdate& u, char* out, size_t n) {
+    const char* name = resultName(u.result);
+    if (!name) {
+        if (n) out[0] = 0;
+        return;
+    }
+    std::snprintf(out, n, "\"last_update\":{\"result\":\"%s\",\"step\":\"%s\",\"lowest_heap\":%lu}", name,
+                  stepName(u.step), static_cast<unsigned long>(u.lowestHeap));
 }
 
 bool takeRequest(RequestFlag& f) {

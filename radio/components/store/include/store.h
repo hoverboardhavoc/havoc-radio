@@ -3,6 +3,7 @@
 #pragma once
 #include <cstdint>
 
+#include "guide_fetch.h"
 #include "radio_model.h"
 
 namespace store {
@@ -25,5 +26,10 @@ void requestGuide();
 bool takeGuideRequest();  // cleared first, so a crash during the download cannot repeat it
 void setGuideResult(uint8_t result);
 uint8_t takeGuideResult();  // 0 when none; cleared
+// POST /api/guide/update: 409 without a configured network, else the request stored and 202 (guide::requestUpdate).
+int requestGuideUpdate(bool netSaved, char* body, size_t n);
+// The last download since power-up (GET /api/guide's last_update); init() forgets it at a power-on reset.
+void setLastUpdate(const guide::LastUpdate& u);
+bool lastUpdate(guide::LastUpdate& out);
 
 }  // namespace store

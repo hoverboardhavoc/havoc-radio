@@ -38,7 +38,8 @@ protected:
 };
 
 // The download's results, as stored for the normal app to show on home.
-enum class Result : uint8_t { None, Updated, UpToDate, NoNetwork, Failed, CheckFailed };
+// Cancelled is recorded for GET /api/guide only; home shows nothing for it.
+enum class Result : uint8_t { None, Updated, UpToDate, NoNetwork, Failed, CheckFailed, Cancelled };
 enum class Step : uint8_t { Join, Manifest, Table, Check };
 const char* stepName(Step s);
 
@@ -95,11 +96,25 @@ Report fetch(Http& http, Sink& sink, const Info& loaded, Progress& progress);
 class RequestFlag {
 public:
     virtual bool get() = 0;
+    virtual void set() = 0;
     virtual void clear() = 0;
 
 protected:
     ~RequestFlag() = default;
 };
 bool takeRequest(RequestFlag& f);
+// POST /api/guide/update: without a configured network 409 and nothing stored; otherwise the request is stored and the
+// answer is 202 (the radio restarts once it is sent). Returns the status and writes the body.
+int requestUpdate(bool netSaved, RequestFlag& f, char* body, size_t n);
+
+// The last download since power-up, for GET /api/guide: its result, the step it ended in and the lowest free heap.
+struct LastUpdate {
+    Result result = Result::None;
+    Step step = Step::Join;
+    uint32_t lowestHeap = 0;
+};
+const char* resultName(Result r);  // "updated", "up to date", "no network", "download failed", "check failed", "cancelled"
+// `"last_update":{...}` for a run, or nothing (an empty string) before one.
+void lastUpdateJson(const LastUpdate& u, char* out, size_t n);
 
 }  // namespace guide

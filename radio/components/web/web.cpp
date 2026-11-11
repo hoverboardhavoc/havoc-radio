@@ -495,10 +495,15 @@ constexpr size_t kRecvBuf = 1024;
 // {"season", "entries", "length", "sha256", "source_modified"} for the loaded table, or {"entries": 0}.
 esp_err_t sendGuide(httpd_req_t* req) {
     const guide::Info i = guide::info();
-    char buf[256];
+    char buf[384], last[128] = "";
     Json j(buf, sizeof buf);
+    guide::LastUpdate u;
+    if (store::lastUpdate(u)) {
+        last[0] = ',';
+        guide::lastUpdateJson(u, last + 1, sizeof last - 1);
+    }
     if (!i.valid) {
-        j.raw("{\"entries\":0}");
+        j.raw("{\"entries\":0%s}", last);
     } else {
         char sha[65], when[24];
         for (int k = 0; k < 32; k++) snprintf(sha + 2 * k, 3, "%02x", i.sha256[k]);
@@ -508,14 +513,29 @@ esp_err_t sendGuide(httpd_req_t* req) {
         strftime(when, sizeof when, "%Y-%m-%dT%H:%M:%SZ", &tm);
         j.raw("{\"season\":");
         j.str(i.season);
-        j.raw(",\"entries\":%u,\"length\":%u,\"sha256\":\"%s\",\"source_modified\":\"%s\"}",
-              static_cast<unsigned>(i.entries), static_cast<unsigned>(i.length), sha, when);
+        j.raw(",\"entries\":%u,\"length\":%u,\"sha256\":\"%s\",\"source_modified\":\"%s\"%s}",
+              static_cast<unsigned>(i.entries), static_cast<unsigned>(i.length), sha, when, last);
     }
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, j.c_str(), j.size());
 }
 
 esp_err_t getGuide(httpd_req_t* req) { return sendGuide(req); }
+
+volatile bool s_guideRestart = false;
+
+// The same request as Update guide on the radio; the UI loop restarts once the answer is sent.
+esp_err_t postGuideUpdate(httpd_req_t* req) {
+    net::Info ni;
+    net::info(ni);
+    char body[48];
+    const int status = store::requestGuideUpdate(ni.saved, body, sizeof body);
+    httpd_resp_set_status(req, status == 202 ? "202 Accepted" : "409 Conflict");
+    httpd_resp_set_type(req, "application/json");
+    const esp_err_t r = httpd_resp_send(req, body, std::strlen(body));
+    if (status == 202) s_guideRestart = true;
+    return r;
+}
 
 esp_err_t guideFail(httpd_req_t* req, const char* why) {
     httpd_resp_set_status(req, "400 Bad Request");
@@ -623,6 +643,12 @@ void handle(const char* uri, httpd_method_t method, esp_err_t (*fn)(httpd_req_t*
 
 }  // namespace
 
+bool takeGuideRestart() {
+    if (!s_guideRestart) return false;
+    s_guideRestart = false;
+    return true;
+}
+
 bool takeConfirmRequest() {
     if (!s_confirmReq) return false;
     s_confirmReq = false;
@@ -640,7 +666,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 20;
+    cfg.max_uri_handlers = 21;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -663,6 +689,7 @@ void start(const char* version) {
     handle("/api/ota", HTTP_POST, postOta);
     handle("/api/guide", HTTP_GET, getGuide);
     handle("/api/guide", HTTP_POST, postGuide);
+    handle("/api/guide/update", HTTP_POST, postGuideUpdate);
     xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }
 

@@ -541,6 +541,12 @@ or `Guide check failed` (the table did not pass the K-Radio's checks). After a c
 
 ![After the download: Guide updated](images/guide/guide_result_updated.png)
 
+The same download can be started over the network with `POST http://radio.local/api/guide/update`: without a saved
+network the K-Radio answers 409 with `{"error": "no network"}`; otherwise it answers 202 and restarts into the
+download mode. `GET /api/guide` describes the loaded guide (season, entries, length, SHA-256 and EiBi's date) and,
+after a download since power-up, its `last_update`: the result (`updated`, `up to date`, `no network`,
+`download failed`, `check failed` or `cancelled`), the step it ended in and the lowest free heap.
+
 The new guide is written beside the loaded one and checked before it replaces it. A failed, cancelled or cut-off
 download, also one cut by switching off, leaves the loaded guide in use. The download checks the table's SHA-256
 against the data repository's manifest; the connection itself does not verify GitHub's certificate. The guide can
