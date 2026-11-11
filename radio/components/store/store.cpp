@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "nvs.h"
 #include "nvs_flash.h"
+#include "guide_fetch.h"
 #include "radio.h"
 
 namespace store {
@@ -80,6 +81,12 @@ bool loadState(radio::State& s) {
 
 void touch() { s_dirty = true; }
 
+void flush() {
+    if (!s_dirty) return;
+    s_dirty = false;
+    writeState();
+}
+
 void poll(uint32_t now) {
     if (!s_dirty || now - s_lastWrite < kMinWriteIntervalMs) return;
     s_dirty = false;
@@ -102,6 +109,51 @@ void saveWifi(const char* ssid, const char* pass) {
     nvs_set_str(h, "pass", pass);
     nvs_commit(h);
     nvs_close(h);
+}
+
+namespace {
+
+uint8_t getU8(const char* key) {
+    nvs_handle h;
+    uint8_t v = 0;
+    if (nvs_open(kNamespace, NVS_READONLY, &h) != ESP_OK) return 0;
+    if (nvs_get_u8(h, key, &v) != ESP_OK) v = 0;
+    nvs_close(h);
+    return v;
+}
+
+void setU8(const char* key, uint8_t v) {
+    nvs_handle h;
+    if (nvs_open(kNamespace, NVS_READWRITE, &h) != ESP_OK) return;
+    if (v)
+        nvs_set_u8(h, key, v);
+    else
+        nvs_erase_key(h, key);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+class Request : public guide::RequestFlag {
+public:
+    bool get() override { return getU8("guide_req") != 0; }
+    void clear() override { setU8("guide_req", 0); }
+};
+
+}  // namespace
+
+void requestGuide() { setU8("guide_req", 1); }
+
+bool takeGuideRequest() {
+    Request r;
+    return guide::takeRequest(r);
+}
+
+void setGuideResult(uint8_t result) { setU8("guide_res", result); }
+
+uint8_t takeGuideResult() {
+    const uint8_t r = getU8("guide_res");
+    if (r) setU8("guide_res", 0);
+    return r;
 }
 
 }  // namespace store

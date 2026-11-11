@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "guide_core.h"
+#include "guide_fetch.h"
 #include "guide_slots.h"
 
 namespace guide {
@@ -21,16 +22,16 @@ void withHits(void (*fn)(const Hits& hits, bool am, void* arg), void* arg);
 
 // A new table written to the free slot in 4 KB sectors (web upload, download mode). Lookups continue on the old
 // table and pause only for the switch.
-class Update {
+class Update : public Sink {
 public:
     Update();
     ~Update();
     Update(const Update&) = delete;
     Update& operator=(const Update&) = delete;
-    Err begin(uint32_t length);
-    Err add(const void* data, uint32_t n);
+    Err begin(uint32_t length) override;
+    Err add(const void* data, uint32_t n) override;
     // Checks the SHA-256 when given and every table check; on Ok the new table is the one read.
-    Err finish(const uint8_t* sha256);
+    Err finish(const uint8_t* sha256) override;
     uint32_t received() const;
 
 private:

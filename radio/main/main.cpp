@@ -3,8 +3,10 @@
 #include <cstring>
 
 #include "board.h"
+#include "download.h"
 #include "esp_log.h"
 #include "esp_sleep.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
@@ -50,6 +52,12 @@ void handle(const ui::Output& out) {
             case radio::Cmd::CancelInstall: web::decide(false); break;
             case radio::Cmd::SplashEnd: s_netWanted = true; break;
             case radio::Cmd::Lamp: lamp::setMode(static_cast<radio::Lamp>(c.v)); break;
+            // Update guide: a request in NVS and a restart into download mode.
+            case radio::Cmd::GuideUpdate:
+                store::flush();
+                store::requestGuide();
+                esp_restart();
+                break;
             case radio::Cmd::NtpServer:
                 if (radio::edit([](radio::State& st, void* p) { return radio::setNtpServer(st, static_cast<const char*>(p)); },
                                 const_cast<char*>(s_ui.serverText())))
@@ -97,6 +105,8 @@ extern "C" void app_main() {
     radio::defaults(s);
     store::loadState(s);
     ssd1306::contrast(contrastRegister(s.contrast));
+    if (store::takeGuideRequest()) download::run(s.lang);
+    const uint8_t guideResult = store::takeGuideResult();
     lamp::start(s.light);
     int contrast = s.contrast, light = s.light;
 
@@ -107,6 +117,7 @@ extern "C" void app_main() {
 
     ui::prepareSplash();
     s_ui.begin(millis());
+    if (const char* text = download::resultText(s.lang, guideResult)) s_ui.result(text, millis());
     uint32_t lastFrame = 0;
     for (;;) {
         const uint32_t now = millis();
