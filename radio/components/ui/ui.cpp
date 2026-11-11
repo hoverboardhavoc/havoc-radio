@@ -107,8 +107,11 @@ void pipText(const char* s, char* out, size_t n) {
     out[k] = 0;
 }
 
-// 0..1440 minutes as HHMM.
-void hhmm4(int m, char* out) { snprintf(out, 5, "%02d%02d", m / 60 % 100, m % 60); }
+// 0..1440 minutes as HHMM (2400 for 1440). Unsigned and clamped, so the compiler sees four digits.
+void hhmm4(unsigned m, char* out) {
+    if (m > 1440) m = 1440;
+    snprintf(out, 5, "%02u%02u", m / 60, m % 60);
+}
 
 // The entry's window, "1700-1800".
 void windowText(const guide::Entry& e, char* out) {

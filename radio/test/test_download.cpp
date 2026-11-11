@@ -1,6 +1,7 @@
 // The download mode's core with a fake transport: up to date, an update, a manifest of another format, a length
 // that does not match or exceeds a slot, a hash mismatch, a table failing its checks, a cut-off body, the HTTP
 // response head, the manifest parser, and the request cleared before the download starts.
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <string>
