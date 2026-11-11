@@ -11,6 +11,7 @@ The pictures are the K-Radio's own screens, enlarged three times. The screen is 
 - [The home screen](#the-home-screen)
 - [The main menu](#the-main-menu)
 - [Station (RDS)](#station-rds)
+- [Station (frequency guide)](#station-frequency-guide)
 - [Presets](#presets)
 - [The lamp](#the-lamp)
 - [Settings](#settings)
@@ -104,7 +105,19 @@ the time in UTC, for example `13:05Z`. The `Z` marks UTC; the K-Radio has no loc
 minute. It is left out until the clock is set, and when the frequency leaves no room for it, as with a 10 Hz step
 above 10 MHz.
 
-![The time on the home screen: 49m AM step 5k, 13:05Z, 6070 kHz](images/guide/time_home.png)
+![The time on the home screen: Channel 292 step 5k, 13:05Z, 6070 kHz](images/guide/time_home.png)
+
+### What is on air
+
+In AM, LSB and USB, once the clock is set, the top row shows the name of the station on air on the tuned frequency
+in place of the band name and the mode, from the frequency guide (see [Station (frequency guide)](#station-frequency-guide)).
+The name changes with the frequency at once. When several stations are on air within 1 kHz, their names take turns,
+3 s each. A long name is cut with `…` before the signal bars (or before the `Mute` flag while muted), and the step
+is then left out. Without the clock, without a guide or with nothing on air, the top row shows the band and the mode.
+
+![The third of three stations on air at 17:30Z on 6070 kHz: China Radio Int. step 5k](images/guide/guide_home_three_3.png)
+
+![A long name cut: WRMI Radio Miami Int., 00:10Z, 5950 kHz](images/guide/guide_home_long.png)
 
 ### Signal bars
 
@@ -160,10 +173,10 @@ A dotted bar at the right edge shows that the list holds more entries than fit. 
 | Step | the tuning step | choose the step. See [Step](#step). |
 | Bandwidth | the filter bandwidth | choose the bandwidth. See [Bandwidth](#bandwidth). |
 | Seek | none | search for a station. See [Seek](#seek). |
-| Station | none | show the station's RDS. Only on FM. See [Station (RDS)](#station-rds). |
+| Station | none | on FM, show the station's RDS (see [Station (RDS)](#station-rds)); in AM, LSB and USB, list what the frequency guide has on the frequency (see [Station (frequency guide)](#station-frequency-guide)). |
 | Settings | none | open Settings. See [Settings](#settings). |
 
-![The end of the main menu: Step, Bandwidth, Seek and Settings (selected)](images/guide/menu_main_settings.png)
+![The end of the main menu: Bandwidth, Seek, Station and Settings (selected)](images/guide/menu_main_settings.png)
 
 The narrow column at the left edge holds two controls that can be selected:
 
@@ -299,6 +312,38 @@ A station that sends a name but no text shows the top row alone. While the K-Rad
 Press the wheel to return to the main menu. A long press returns to the home screen. The Station screen stays open
 without input, so that a long text can be read to the end.
 
+## Station (frequency guide)
+
+In AM, LSB and USB the main menu's `Station` lists what broadcasts on the tuned frequency, from the frequency guide:
+the [EiBi](http://www.eibispace.de/) shortwave schedule, compiled by Eike Bierwirth, converted into a table the
+K-Radio reads from its flash. EiBi's README says: "any person is absolutely free to download, use, copy, or distribute
+these files or to use them within third-party software." The guide covers LW, MW and SW broadcasts, utility stations
+included. A new guide is loaded from Settings > Guide or from the web page; see [Guide](#guide).
+
+![The Station screen at 17:30Z on 6070 kHz: three entries on air, marked, first](images/guide/guide_station.png)
+
+The list holds the entries within 1 kHz of the tuned frequency, at most 16: the station's name at the left, cut with
+`…` when it is long, and its time window in UTC (`1700-1800`) at the right, or `irr` for a broadcast on irregular
+days or dates. Once the clock is set, the entries on air come first, marked `▶`; the rest follow in order of their
+start time from now. Without the clock the list runs in start time order from 0000, with no marks. The list follows
+the time while it is open.
+
+![Further down: a broadcast on irregular dates, marked irr](images/guide/guide_station_scrolled.png)
+
+A press on an entry shows its details: the name, the time window with the days (`daily`, `Mo-Fr`, `Tu,Th`, `irr`),
+the language and the target area. The days, language and target codes are EiBi's, as EiBi writes them: `Tu,Th` is
+Tuesday and Thursday, `D` is German, `CAs` is Central Asia. The days are the UTC day a broadcast starts. EiBi's
+README explains every code.
+
+![Entry details: China Radio Int., 1700-1800 UTC daily, Language R, Target CAs](images/guide/guide_station_details.png)
+
+`Nothing listed on 6075 kHz` means the guide has no entry within 1 kHz. `No guide` means the K-Radio has no valid
+guide loaded.
+
+![Nothing listed on 6075 kHz](images/guide/guide_station_nothing.png)
+
+The screen closes after 8 s without input, as the menus do.
+
 ## Presets
 
 A preset holds a frequency, a mode and a name of up to 10 characters. The K-Radio holds up to 20 presets.
@@ -360,7 +405,7 @@ and Mute, select it.
 
 ![Settings, first part: WiFi Lab, AGC on, Contrast 15, Light off](images/guide/settings.png)
 
-![Settings, last part: Light off, Time --:--, Language English, About](images/guide/settings_about.png)
+![Settings, last part: Time --:--, Guide B26, Language English, About](images/guide/settings_about.png)
 
 | Entry | Value shown | Press it to |
 |---|---|---|
@@ -369,6 +414,7 @@ and Mute, select it.
 | Contrast | 1 to 15 | set the screen contrast |
 | Light | `off`, the lamp level (1 to 15) while the lamp is on, or `SOS` | open the lamp screen |
 | Time | the time in UTC, or `--:--` before the clock is set | open the Time list |
+| Guide | the frequency guide's season (`B26`), or nothing without a guide | open the Guide list |
 | Language | the language's name | choose the language |
 | About | | show the version, address, battery level and time |
 
@@ -459,6 +505,46 @@ server is cut with `…` in the Time list.
 ![The NTP server screen: NTP server, edit, pool.ntp.org and the character ring with OK selected](images/guide/time_server_entry.png)
 
 The clock uses the new server from its next sync.
+
+### Guide
+
+The frequency guide is EiBi's schedule for the season: `A26` from the last Sunday of March 2026, `B26` from the last
+Sunday of October. EiBi revises it during the season. The data repository
+[havoc-radio-guide](https://github.com/hoverboardhavoc/havoc-radio-guide) keeps a converted copy current; the K-Radio
+or its web page downloads it from there on request. Nothing downloads on its own: there is no check at start-up and
+no timer.
+
+![Settings with Guide selected: Guide B26](images/guide/guide_settings.png)
+
+Pressing Guide opens the Guide list: `EiBi` with the season and the number of entries, which cannot be selected, and
+`Update guide`.
+
+![The Guide list: EiBi B26 with its entry count, Update guide (selected)](images/guide/guide_settings_list.png)
+
+Pressing `Update guide` restarts the K-Radio into a download mode. It needs a saved WiFi network: without one the
+entry shows `No network` and a press does nothing.
+
+![Update guide without a saved network: No network](images/guide/guide_settings_nonet.png)
+
+The download mode runs on its own, with the receiver off and the web page unavailable, because the secure connection
+to GitHub takes more memory than the K-Radio has to spare while it plays. The screen shows `Updating guide` and the
+step: `Joining` the network (at most 20 s), `Checking` whether a new guide exists, and `Downloading`, with a bar and
+the kilobytes received. The side button (Back) cancels at any step. The whole mode takes at most 90 s.
+
+![Download mode: Updating guide, Joining Lab, Back: cancel](images/guide/guide_download_join.png)
+
+![Download mode: Downloading, a bar, 92/187 KB](images/guide/guide_download_get.png)
+
+The K-Radio then restarts into the normal home screen and shows the result in the top row for 3 s: `Guide updated`,
+`Up to date` (the loaded guide is the current one), `No network` (the network could not be joined), `Download failed`
+or `Guide check failed` (the table did not pass the K-Radio's checks). After a cancel it shows nothing.
+
+![After the download: Guide updated](images/guide/guide_result_updated.png)
+
+The new guide is written beside the loaded one and checked before it replaces it. A failed, cancelled or cut-off
+download, also one cut by switching off, leaves the loaded guide in use. The download checks the table's SHA-256
+against the data repository's manifest; the connection itself does not verify GitHub's certificate. The guide can
+also be loaded from the web page, where `From file` takes a table from any source; see [The web page](#the-web-page).
 
 ### Language
 
@@ -551,6 +637,8 @@ The Radio view:
   station carries traffic news (highlighted during a traffic announcement) and the station code (`PI`). `Also on`
   lists the other frequencies that carry the same programme; a frequency there tunes the K-Radio to it. Without RDS
   it shows `RDS: searching`.
+- In AM, LSB and USB, the frequency section lists the frequency guide's entries within 1 kHz, as on the K-Radio's
+  Station screen: time, days, name, language and target, with the entries on air highlighted.
 - The `-` and `+` buttons tune by the step. A frequency typed into the box (in MHz on FM, in kHz otherwise) tunes the
   K-Radio when `Tune` is pressed.
 - Menus pick the band, mode, step and bandwidth. A slider sets the volume. A tick box mutes the K-Radio.
@@ -565,6 +653,13 @@ The Settings view:
   and the page shows `Failed`. Below, the section shows the K-Radio's time in UTC, this browser's own clock with its
   time zone, and how long ago the K-Radio last set its clock, from which server. A server set on the K-Radio shows
   on the page, and the reverse.
+- Under `Guide`, the section shows the loaded frequency guide's season, EiBi's date and the number of entries, or
+  `No guide`. `Update` fetches the data repository's manifest. When the K-Radio already has that guide the page shows
+  `Up to date`; otherwise it downloads the table, checks its length and SHA-256 against the manifest and sends it to
+  the K-Radio, with progress, then shows `Guide updated`. The download comes from GitHub to the phone or computer, so
+  it needs that device to be on the internet: on the K-Radio's own access point it fails with a message pointing to
+  `From file`. `From file` sends a `stations.bin` chosen on the device, for example one saved from the data
+  repository. The K-Radio checks every table it receives and keeps its loaded guide when a table fails.
 - Under `Firmware`, `Upload` installs new firmware (see [Firmware updates](#firmware-updates)). The section also shows
   the version and the battery level.
 
@@ -572,8 +667,9 @@ The page uses the language chosen on the K-Radio. It shows `No connection` besid
 K-Radio.
 
 The page has no password. Anyone on the same network can tune the K-Radio and change its presets. Installing
-firmware needs a press of the wheel on the K-Radio itself. The K-Radio's one connection to the internet is to the NTP
-server, while time sync is on.
+firmware needs a press of the wheel on the K-Radio itself. The K-Radio connects to the internet in two cases: to the
+NTP server while time sync is on, and to GitHub (`raw.githubusercontent.com`) in the download mode that
+`Update guide` starts.
 
 ## Firmware updates
 

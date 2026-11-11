@@ -90,7 +90,7 @@ Power the SuperMini from any USB supply within a few metres of the radio. It sta
    ![](images/stock/tree-update.png)
 
 2. The radio connects, with its MAC address on the bottom line, and about 5 seconds later shows this while it
-   downloads about 1.8 MB, which takes about 20 seconds. The SuperMini's LED blinks fast. To follow the download on a phone, join it to `Havoc`
+   downloads about 2 MB, which takes 20 to 25 seconds. The SuperMini's LED blinks fast. To follow the download on a phone, join it to `Havoc`
    and open `http://192.168.4.1`: the page's Downloads section shows the radio's MAC address and the bytes sent.
    The install runs the same without the phone.
 
