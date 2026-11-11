@@ -1,10 +1,10 @@
-#include "guide_fetch.h"
+#include "download_core.h"
 
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
-namespace guide {
+namespace download {
 
 namespace {
 
@@ -122,6 +122,8 @@ const char* stepName(Step s) {
         case Step::Manifest: return "manifest";
         case Step::Table: return "table";
         case Step::Check: return "check";
+        case Step::Prompt: return "prompt";
+        case Step::Image: return "image";
     }
     return "?";
 }
@@ -196,6 +198,8 @@ bool parseManifest(const char* json, size_t n, Manifest& out) {
         double num = 0;
         if (!j.str(key, sizeof key) || !j.eat(':') || !j.value(s, sizeof s, &isStr, &num, &isNum)) return false;
         if (!std::strcmp(key, "format") && isNum) out.format = static_cast<int>(num);
+        if (!std::strcmp(key, "version") && isStr && std::strlen(s) < sizeof out.version)
+            std::memcpy(out.version, s, std::strlen(s) + 1);
         if (!std::strcmp(key, "length") && isNum && num >= 0 && num < 4294967296.0) out.length = static_cast<int64_t>(num);
         if (!std::strcmp(key, "sha256") && isStr && std::strlen(s) == 64) {
             out.hasSha = true;
@@ -212,7 +216,62 @@ bool parseManifest(const char* json, size_t n, Manifest& out) {
     return j.p == j.end;
 }
 
-Report fetch(Http& http, Sink& sink, const Info& loaded, Progress& progress) {
+namespace {
+
+// One manifest of at most 2 KB, parsed. Err::Read when it cannot be fetched, Err::Cut when cut off, Err::Magic when
+// it is not a flat JSON object.
+Err getManifest(Http& http, const char* path, Manifest& m) {
+    if (!http.open(path)) return Err::Read;
+    Response resp(http);
+    if (!resp.begin() || resp.length() > static_cast<int64_t>(kManifestMax)) return Err::Read;
+    char json[kManifestMax];
+    int got = 0;
+    for (;;) {
+        const int n = resp.body(reinterpret_cast<uint8_t*>(json) + got, static_cast<int>(sizeof json) - got);
+        if (n < 0) return Err::Cut;
+        if (n == 0) break;
+        got += n;
+    }
+    http.close();
+    if (!parseManifest(json, got, m) || !m.hasSha || m.length < 0) return Err::Magic;
+    return Err::Ok;
+}
+
+// One version field: 1 to 9 digits, ended by '.' or the string's end. Returns the character after it, or nullptr.
+const char* field(const char* p, uint32_t& out) {
+    out = 0;
+    int digits = 0;
+    for (; *p >= '0' && *p <= '9'; p++, digits++) out = out * 10 + static_cast<uint32_t>(*p - '0');
+    if (digits < 1 || digits > 9 || (*p && *p != '.')) return nullptr;
+    return p;
+}
+
+bool parseVersion(const char* s, uint32_t out[4]) {
+    for (int i = 0; i < 4; i++) out[i] = 0;
+    if (!s) return false;
+    for (int i = 0;; i++) {
+        if (i == 4 || !(s = field(s, out[i]))) return false;
+        if (!*s) return true;
+        s++;
+    }
+}
+
+}  // namespace
+
+void firmwarePaths(const char* branch, char manifest[kPathMax], char image[kPathMax]) {
+    std::snprintf(manifest, kPathMax, "/hoverboardhavoc/havoc-radio/%s/%s/manifest.json", branch, kLayout);
+    std::snprintf(image, kPathMax, "/hoverboardhavoc/havoc-radio/%s/%s/havoc-radio.bin", branch, kLayout);
+}
+
+int compareVersions(const char* a, const char* b) {
+    uint32_t x[4], y[4];
+    if (!parseVersion(a, x) || !parseVersion(b, y)) return -2;
+    for (int i = 0; i < 4; i++)
+        if (x[i] != y[i]) return x[i] > y[i] ? 1 : -1;
+    return 0;
+}
+
+Report fetchGuide(Http& http, guide::Sink& sink, const guide::Info& loaded, Progress& progress) {
     Report r;
     auto fail = [&](Step s, Err e, Result res = Result::Failed) {
         http.close();
@@ -223,38 +282,24 @@ Report fetch(Http& http, Sink& sink, const Info& loaded, Progress& progress) {
     };
     // The manifest: at most 2 KB, format 1.
     progress.step(Step::Manifest);
-    if (!http.open(kManifestPath)) return fail(Step::Manifest, Err::Read);
     Manifest m;
-    {
-        Response resp(http);
-        if (!resp.begin() || resp.length() > static_cast<int64_t>(kManifestMax)) return fail(Step::Manifest, Err::Read);
-        char json[kManifestMax];
-        int got = 0;
-        for (;;) {
-            const int n = resp.body(reinterpret_cast<uint8_t*>(json) + got, static_cast<int>(sizeof json) - got);
-            if (n < 0) return fail(Step::Manifest, Err::Cut);
-            if (n == 0) break;
-            got += n;
-        }
-        http.close();
-        if (!parseManifest(json, got, m)) return fail(Step::Manifest, Err::Magic);
-        if (m.format != kFormat) return fail(Step::Manifest, Err::Format);
-        if (!m.hasSha || m.length < 0) return fail(Step::Manifest, Err::Magic);
-    }
+    Err e = getManifest(http, kGuideManifestPath, m);
+    if (e != Err::Ok) return fail(Step::Manifest, e);
+    if (m.format != guide::kFormat) return fail(Step::Manifest, Err::Format);
     if (loaded.valid && !std::memcmp(loaded.sha256, m.sha256, sizeof m.sha256)) {
         r.result = Result::UpToDate;
         return r;
     }
-    if (m.length > kSlotSize || m.length < kHeaderLen) return fail(Step::Manifest, Err::TooLong);
+    if (m.length > guide::kSlotSize || m.length < guide::kHeaderLen) return fail(Step::Manifest, Err::TooLong);
     // The table: the manifest's length, streamed into the free slot.
     const uint32_t total = static_cast<uint32_t>(m.length);
     progress.step(Step::Table);
     progress.bytes(0, total);
-    if (!http.open(kTablePath)) return fail(Step::Table, Err::Read);
+    if (!http.open(kGuideTablePath)) return fail(Step::Table, Err::Read);
     Response resp(http);
     if (!resp.begin()) return fail(Step::Table, Err::Read);
     if (resp.length() != m.length) return fail(Step::Table, Err::Length);
-    Err e = sink.begin(total);
+    e = sink.begin(total);
     if (e != Err::Ok) return fail(Step::Table, e);
     uint8_t buf[512];
     uint32_t done = 0;
@@ -278,12 +323,89 @@ Report fetch(Http& http, Sink& sink, const Info& loaded, Progress& progress) {
     return r;
 }
 
-int requestUpdate(bool netSaved, RequestFlag& f, char* body, size_t n) {
+Report fetchFirmware(Http& http, Ota& ota, const char* running, const char* manifestPath, const char* imagePath,
+                     Prompt* prompt, Progress& progress) {
+    Report r;
+    bool begun = false;
+    auto fail = [&](Step s, Err e, Result res = Result::Failed) {
+        http.close();
+        if (begun) ota.abort();
+        r.step = s;
+        r.err = e;
+        r.result = res;
+        return r;
+    };
+    // The manifest: at most 2 KB, with a version newer than the running one to go on.
+    progress.step(Step::Manifest);
+    Manifest m;
+    Err e = getManifest(http, manifestPath, m);
+    if (e != Err::Ok) return fail(Step::Manifest, e);
+    const int newer = compareVersions(m.version, running);
+    if (newer == -2) return fail(Step::Manifest, Err::Format);
+    if (newer <= 0) {
+        r.result = Result::UpToDate;
+        return r;
+    }
+    if (m.length == 0 || m.length > static_cast<int64_t>(ota.capacity())) return fail(Step::Manifest, Err::TooLong);
+    if (prompt) {
+        progress.step(Step::Prompt);
+        if (!prompt->confirm(m.version)) return fail(Step::Prompt, Err::Ok, Result::Cancelled);
+    }
+    // The image: the manifest's length, streamed into the inactive slot with its SHA-256 computed on the way. The slot
+    // is erased before the connection opens, so the server does not wait on the erase.
+    const uint32_t total = static_cast<uint32_t>(m.length);
+    progress.step(Step::Image);
+    progress.bytes(0, total);
+    e = ota.begin(total);
+    if (e != Err::Ok) return fail(Step::Image, e);
+    begun = true;
+    if (!http.open(imagePath)) return fail(Step::Image, Err::Read);
+    Response resp(http);
+    if (!resp.begin()) return fail(Step::Image, Err::Read);
+    if (resp.length() != m.length) return fail(Step::Image, Err::Length);
+    guide::Sha256 hash;
+    uint8_t buf[512];
+    uint32_t done = 0;
+    for (;;) {
+        const int n = resp.body(buf, sizeof buf);
+        if (n < 0) return fail(Step::Image, Err::Cut);
+        if (n == 0) break;
+        hash.update(buf, n);
+        e = ota.write(buf, n);
+        if (e != Err::Ok) return fail(Step::Image, e);
+        done += n;
+        progress.bytes(done, total);
+    }
+    http.close();
+    // The SHA-256, the SDK's image check, then the slot selected.
+    progress.step(Step::Check);
+    uint8_t sha[32];
+    hash.finish(sha);
+    if (std::memcmp(sha, m.sha256, sizeof sha)) return fail(Step::Check, Err::Hash);
+    begun = false;  // end() releases the handle whatever it answers
+    e = ota.end();
+    if (e == Err::Image) return fail(Step::Check, e, Result::CheckFailed);
+    if (e != Err::Ok) return fail(Step::Check, e);
+    e = ota.activate();
+    if (e != Err::Ok) return fail(Step::Check, e);
+    r.step = Step::Check;
+    r.result = Result::Updated;
+    return r;
+}
+
+Request takeRequest(RequestStore& s) {
+    const Request r = s.get();
+    if (r == Request::None) return r;
+    s.clear();
+    return r > Request::FirmwareApi ? Request::None : r;
+}
+
+int requestUpdate(Request r, bool netSaved, RequestStore& s, char* body, size_t n) {
     if (!netSaved) {
         std::snprintf(body, n, "{\"error\":\"no network\"}");
         return 409;
     }
-    f.set();
+    s.set(r);
     std::snprintf(body, n, "{\"update\":\"requested\"}");
     return 202;
 }
@@ -301,20 +423,16 @@ const char* resultName(Result r) {
     return nullptr;
 }
 
+const char* kindName(Kind k) { return k == Kind::Firmware ? "firmware" : "guide"; }
+
 void lastUpdateJson(const LastUpdate& u, char* out, size_t n) {
     const char* name = resultName(u.result);
     if (!name) {
         if (n) out[0] = 0;
         return;
     }
-    std::snprintf(out, n, "\"last_update\":{\"result\":\"%s\",\"step\":\"%s\",\"lowest_heap\":%lu}", name,
-                  stepName(u.step), static_cast<unsigned long>(u.lowestHeap));
+    std::snprintf(out, n, "\"last_update\":{\"kind\":\"%s\",\"result\":\"%s\",\"step\":\"%s\",\"lowest_heap\":%lu}",
+                  kindName(u.kind), name, stepName(u.step), static_cast<unsigned long>(u.lowestHeap));
 }
 
-bool takeRequest(RequestFlag& f) {
-    if (!f.get()) return false;
-    f.clear();
-    return true;
-}
-
-}  // namespace guide
+}  // namespace download

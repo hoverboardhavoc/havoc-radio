@@ -23,6 +23,17 @@ protected:
     ~Flash() = default;
 };
 
+// Where a new table goes: the free slot (guide::Update on the radio).
+class Sink {
+public:
+    virtual Err begin(uint32_t length) = 0;
+    virtual Err add(const void* data, uint32_t n) = 0;
+    virtual Err finish(const uint8_t* sha256) = 0;
+
+protected:
+    ~Sink() = default;
+};
+
 class SlotSource : public Source {
 public:
     SlotSource(Flash& f, uint32_t base) : f_(f), base_(base) {}

@@ -22,6 +22,8 @@ enum class Err : uint8_t {
     Ok, Read, Short, Magic, Format, HeaderLen, Length, Crc, Layout, StringTable, String, Entry, Index, Order,
     // Uploads and downloads.
     TooLong, Cut, Hash, Write,
+    // A firmware image the SDK's check refuses.
+    Image,
 };
 const char* errText(Err e);
 

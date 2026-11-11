@@ -97,6 +97,7 @@ const char* errText(Err e) {
         case Err::Cut: return "cut off";
         case Err::Hash: return "SHA-256 does not match";
         case Err::Write: return "flash write failed";
+        case Err::Image: return "not a valid app image";
     }
     return "?";
 }

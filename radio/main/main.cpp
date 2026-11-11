@@ -57,10 +57,11 @@ void handle(const ui::Output& out) {
             case radio::Cmd::CancelInstall: web::decide(false); break;
             case radio::Cmd::SplashEnd: s_netWanted = true; break;
             case radio::Cmd::Lamp: lamp::setMode(static_cast<radio::Lamp>(c.v)); break;
-            // Update guide: a request in NVS and a restart into download mode.
+            // Update guide and Update firmware: a request in NVS and a restart into download mode.
             case radio::Cmd::GuideUpdate:
+            case radio::Cmd::FirmwareUpdate:
                 store::flush();
-                store::requestGuide();
+                download::request(c.cmd == radio::Cmd::GuideUpdate ? download::Request::Guide : download::Request::Firmware);
                 esp_restart();
                 break;
             case radio::Cmd::NtpServer:
@@ -108,8 +109,9 @@ extern "C" void app_main() {
     radio::defaults(s);
     store::loadState(s);
     ssd1306::contrast(contrastRegister(s.contrast));
-    if (store::takeGuideRequest()) download::run(s.lang);
-    const uint8_t guideResult = store::takeGuideResult();
+    const download::Request request = download::takeRequest();
+    if (request != download::Request::None) download::run(s.lang, request, kVersion);
+    const char* result = download::takeResultText(s.lang);
     s_app = new App();
     ssd1306::keepFrames(s_app->shown.buf);
     lamp::start(s.light);
@@ -122,7 +124,7 @@ extern "C" void app_main() {
 
     ui::prepareSplash();
     s_app->ui.begin(millis());
-    if (const char* text = download::resultText(s.lang, guideResult)) s_app->ui.result(text, millis());
+    if (result) s_app->ui.result(result, millis());
     uint32_t lastFrame = 0;
     for (;;) {
         const uint32_t now = millis();
@@ -174,8 +176,9 @@ extern "C" void app_main() {
         s_app->ui.tick(now, s, st, out);
         handle(out);
         if (web::takeConfirmRequest()) s_app->ui.confirmInstall(now);
-        // POST /api/guide/update stored the request and has answered: restart into download mode.
-        if (web::takeGuideRestart()) {
+        // POST /api/guide/update or /api/firmware/update stored the request and has answered: restart into download
+        // mode.
+        if (web::takeRestart()) {
             store::flush();
             vTaskDelay(pdMS_TO_TICKS(200));  // the answer's last bytes leave the socket
             esp_restart();

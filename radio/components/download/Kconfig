@@ -1,0 +1,11 @@
+menu "Havoc Radio"
+
+config HAVOC_FIRMWARE_BRANCH
+    string "Branch the firmware update reads"
+    default "firmware"
+    help
+        The branch of hoverboardhavoc/havoc-radio that Settings > Firmware > Update reads its manifest and image
+        from, in the folder of the flash layout. Releases publish to `firmware`; a bench test can point a build at a
+        branch with a test manifest.
+
+endmenu

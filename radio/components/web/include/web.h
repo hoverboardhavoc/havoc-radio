@@ -8,7 +8,7 @@ void start(const char* version);
 bool takeConfirmRequest();
 // The UI's answer to the confirm screen.
 void decide(bool install);
-// True once after POST /api/guide/update has stored a download request and sent its answer.
-bool takeGuideRestart();
+// True once after POST /api/guide/update or /api/firmware/update has stored a download request and sent its answer.
+bool takeRestart();
 
 }  // namespace web
