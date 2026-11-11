@@ -195,6 +195,15 @@ TEST(strings_fit_slots) {
             c.fit("prompt '" + s + "'", w(s), 128);
         for (Str k : {Str::firmware_updated, Str::image_check_failed, Str::toast_cancelled})
             c.fit(std::string("toast '") + c.tr(k) + "'", w(c.tr(k)), 126);
+        // The guide scan. The Seek list's rows; Scanning with the band or all from x = 0, Back: cancel 3 px clear of the
+        // largest count; Nothing heard from x = 10, as the other empty lists.
+        c.row(c.tr(Str::scan_band), "");
+        c.row(c.tr(Str::scan_all), "");
+        c.row(c.tr(Str::last_scan), "");
+        const std::string scanning = fmt(c.tr(Str::scanning_s), widest({"160m", c.tr(Str::all)}).c_str());
+        c.fit("scanning '" + scanning + "'", w(scanning), 128);
+        c.fit("scanning 'Back: cancel'", w(c.tr(Str::back_cancel)) + 3 + w("9999/9999"), 128);
+        c.fit("line '" + std::string(c.tr(Str::nothing_heard)) + "'", w(c.tr(Str::nothing_heard)), 118);
         // Full-screen messages, centred.
         c.fit("message", w(c.tr(Str::installing)), 128);
         c.fit("message", w(c.tr(Str::battery_empty)), 128);

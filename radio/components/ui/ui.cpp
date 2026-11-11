@@ -340,6 +340,9 @@ void Ui::message(const char* text) {
 }
 
 void Ui::build(ListId id, const State& s, const Status& st) {
+    // The scan results read their names from the guide table once per scan and count measured.
+    if (id == ListId::ScanResults && st.scan && builtScan_ == st.scan->id && builtDone_ == st.scan->done) return;
+    builtScan_ = -1;
     count_ = 0;
     gutterCount_ = 0;
     cur_ = 0;
@@ -427,9 +430,32 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             cur_ = s.bwIdx[radio::family(s.mode)];
             break;
         }
+        // Seek: up and down; in AM, LSB and USB with a guide the scans (Scan band inside a band) and the last results.
         case ListId::Seek:
             add(tr(Str::seek_up), "", Act::Seek, 1);
             add(tr(Str::seek_down), "", Act::Seek, -1);
+            if (!radio::isFm(s.mode) && guideLoaded(st)) {
+                if (radio::bandIndex(s.hz, s.mode) >= 0)
+                    add(tr(Str::scan_band), "", Act::Scan, static_cast<int>(scan::Scope::Band));
+                add(tr(Str::scan_all), "", Act::Scan, static_cast<int>(scan::Scope::All));
+                if (st.scan && st.scan->phase == scan::Phase::Done) add(tr(Str::last_scan), "", Act::LastScan);
+            }
+            break;
+        // Scan results, strongest first: the on-air name cut to leave 4 px before the frequency and the RSSI.
+        case ListId::ScanResults:
+            for (int i = 0; st.scan && i < st.scan->results.n; i++) {
+                const scan::Result& r = st.scan->results.r[i];
+                char raw[guide::kStrMax + 1] = "", name[guide::kStrMax + 1];
+                snprintf(buf, sizeof buf, "%u %u", static_cast<unsigned>(r.khz), static_cast<unsigned>(r.rssi));
+                if (st.guideString) st.guideString(st.scan->generation, r.name, raw);
+                pipText(raw, name, sizeof name);
+                add("", buf, Act::ScanResult, i);
+                cutText(name, 124 - gfx::textW(buf) - 4 - 11, items_[count_ - 1].t, sizeof items_[0].t);
+            }
+            if (st.scan) {
+                builtScan_ = st.scan->id;
+                builtDone_ = st.scan->done;
+            }
             break;
         case ListId::Wifi:
             add(tr(Str::status), st.joined ? "radio.local" : tr(Str::not_joined), Act::Info, static_cast<int>(InfoId::Wifi));
@@ -559,6 +585,21 @@ void Ui::openLamp(const Status& st, Output& out) {
     view_ = View::Lamp;
 }
 
+void Ui::openScan(bool push, uint32_t now, const State& s, const Status& st, Output& out) {
+    openList(ListId::ScanResults, push, s, st);
+    lastInput_ = now;
+    scanTune(st, out);
+}
+
+void Ui::scanTune(const Status& st, Output& out) const {
+    if (list_.id == ListId::ScanResults && st.scan && list_.cursor >= 0 && list_.cursor < st.scan->results.n)
+        out.push(Cmd::Tune, st.scan->results.r[list_.cursor].khz * 1000);
+}
+
+void Ui::scanBack(const Status& st, Output& out) const {
+    if (view_ == View::List && list_.id == ListId::ScanResults && st.scan) out.push(Cmd::Tune, st.scan->returnHz);
+}
+
 void Ui::startSeek(int dir, const State& s, Output& out, uint32_t now) {
     goHome();
     if (radio::family(s.mode) == radio::kFamSSB) return toast(i18n::tr(s.lang, Str::toast_no_seek), now);
@@ -623,6 +664,14 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         case Act::FirmwareUpdate:
             if (st.netSaved) out.push(Cmd::FirmwareUpdate);
             return;
+        case Act::Scan:
+            scanFrom_ = st.scan ? st.scan->id : -1;
+            out.push(Cmd::GuideScan, arg);
+            view_ = View::Scanning;
+            depth_ = 0;
+            return;
+        case Act::LastScan: return openScan(true, now, s, st, out);
+        case Act::ScanResult: return goHome();
         case Act::Station:
             if (!radio::isFm(s.mode)) return openList(ListId::Guide, true, s, st);
             if (depth_ < 4) stack_[depth_++] = list_;
@@ -663,6 +712,8 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
         case EventType::Turn:
             switch (view_) {
                 case View::Home:
+                    // The knob does not tune while a guide scan runs (one started from the web page).
+                    if (st.scan && st.scan->phase == scan::Phase::Running) break;
                     out.push(Cmd::Tune, radio::clampHz(s.hz + d * radio::currentStep(s).hz, s.mode));
                     break;
                 case View::List: {
@@ -676,6 +727,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                         if (ring[k] == list_.cursor) i = k;
                     list_.cursor = ring[mod(i + d, len)];
                     scrollTo();
+                    scanTune(st, out);
                     break;
                 }
                 case View::Adjust:
@@ -710,6 +762,8 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                 case View::Confirm:
                     out.push(Cmd::Install);
                     return message(i18n::tr(s.lang, Str::installing));
+                // Scanning: a press stops the scan; its results follow.
+                case View::Scanning: return out.push(Cmd::GuideScanStop);
                 case View::Entry: {
                     char buf[2];
                     const char* k = ringKey(entryIdx_, buf);
@@ -739,7 +793,10 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     return;
                 }
                 case View::List:
-                    if (list_.cursor == -1) return popTo();
+                    if (list_.cursor == -1) {
+                        scanBack(st, out);
+                        return popTo();
+                    }
                     return activate(s, st, out, now);
                 default: return;
             }
@@ -756,6 +813,9 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                 out.push(Cmd::CancelInstall);
                 toast(i18n::tr(s.lang, Str::toast_cancelled), now);
             }
+            // Scanning: a long press cancels the scan, with no results.
+            if (view_ == View::Scanning) out.push(Cmd::GuideScanCancel);
+            scanBack(st, out);
             return goHome();
 
         case EventType::HoldTurn:
@@ -770,6 +830,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                     while (c > 0 && items_[c].skip) c--;
                     list_.cursor = c;
                     scrollTo();
+                    scanTune(st, out);
                     break;
                 }
                 case View::Entry: {
@@ -788,6 +849,8 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
                 toast(i18n::tr(s.lang, Str::toast_cancelled), now);
                 return goHome();
             }
+            if (view_ == View::Scanning) return out.push(Cmd::GuideScanStop);
+            scanBack(st, out);
             if (view_ == View::List || view_ == View::Info || view_ == View::Entry || view_ == View::Station ||
                 view_ == View::Lamp)
                 return popTo();
@@ -803,7 +866,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
     }
 }
 
-void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
+void Ui::tick(uint32_t now, const State& s, const Status& st, Output& out) {
     if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out);
     if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info || view_ == View::Lamp) &&
         now - lastInput_ > kMenuTimeoutMs)
@@ -812,6 +875,14 @@ void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
         out.push(Cmd::CancelInstall);
         toast(i18n::tr(s.lang, Str::toast_cancelled), now);
         goHome();
+    }
+    // The scan ended, ran to its end or stopped: its results. Cancelled, or not started: home.
+    if (view_ == View::Scanning) {
+        const scan::State* sc = st.scan;
+        if (!sc || sc->id == scanFrom_ || sc->phase == scan::Phase::None)
+            goHome();
+        else if (sc->phase == scan::Phase::Done)
+            openScan(false, now, s, st, out);
     }
 }
 
@@ -830,6 +901,7 @@ void Ui::render(Frame& f, uint32_t now, const State& s, const Status& st) {
         case View::Confirm: return drawConfirm(f, s);
         case View::Message: return drawMessage(f);
         case View::Station: return drawStation(f, s, st);
+        case View::Scanning: return drawScanning(f, s, st);
     }
 }
 
@@ -973,6 +1045,7 @@ void Ui::drawList(Frame& f, const State& s, const Status& st) {
     const int n = count_;
     drawGutter(f, list_.cursor, true, s);
     const bool guideRows = list_.id == ListId::Guide;
+    if (list_.id == ListId::ScanResults && !n) gfx::text(f, 10, 12, i18n::tr(s.lang, Str::nothing_heard));
     if (guideRows && !n) {
         if (!guideLoaded(st)) {
             gfx::text(f, 10, 12, i18n::tr(s.lang, Str::no_guide));
@@ -1192,6 +1265,25 @@ PromptAnswer promptAnswer(EventType e) {
         case EventType::HoldTurn: break;
     }
     return PromptAnswer::None;
+}
+
+// Scanning: the scope, the frequency last tuned, a bar with the count, and Back: cancel.
+void Ui::drawScanning(Frame& f, const State& s, const Status& st) {
+    const scan::State* sc = st.scan;
+    if (!sc) return;
+    char t[96];
+    snprintf(t, sizeof t, i18n::tr(s.lang, Str::scanning_s),
+             sc->band >= 0 && sc->band < radio::kBandCount ? radio::kBands[sc->band].name : i18n::tr(s.lang, Str::all));
+    gfx::text(f, 0, 0, t);
+    if (sc->khz) {
+        snprintf(t, sizeof t, "%u kHz", static_cast<unsigned>(sc->khz));
+        gfx::text(f, 0, 8, t);
+    }
+    for (int i = 0; i < 128; i += 2) f.px(i, 19, 1);
+    if (sc->total) f.fill(0, 16, jsRoundI(static_cast<double>(sc->done) / sc->total * 128), 7, 1);
+    gfx::text(f, 0, 24, i18n::tr(s.lang, Str::back_cancel));
+    snprintf(t, sizeof t, "%u/%u", static_cast<unsigned>(sc->done), static_cast<unsigned>(sc->total));
+    gfx::textR(f, 128, 24, t);
 }
 
 void Ui::drawMessage(Frame& f) { gfx::text(f, (gfx::W - gfx::textW(message_)) >> 1, 12, message_); }

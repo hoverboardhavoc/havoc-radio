@@ -222,6 +222,19 @@ const char* bandLabel(int32_t hz, Mode m) {
     return hz < 300000 ? "LW" : hz < kSwLoKhz * 1000 ? "MW" : "SW";
 }
 
+bool scanRange(int32_t hz, Mode m, bool all, int& band, int32_t& loKhz, int32_t& hiKhz) {
+    band = all ? -1 : bandIndex(hz, m);
+    if (all) {
+        loKhz = 153;
+        hiKhz = 30000;
+        return true;
+    }
+    if (band < 0) return false;
+    loKhz = kBands[band].lo;
+    hiKhz = kBands[band].hi;
+    return true;
+}
+
 uint16_t amAntennaCap(int32_t khz) { return khz < kSwLoKhz ? 0 : 1; }
 
 void freqText(const State& s, char* num, size_t n, const char** unit) {

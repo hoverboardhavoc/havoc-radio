@@ -19,6 +19,8 @@
 #        dl fw prompt VERSION   (the firmware's install prompt offering VERSION, from that time)
 #        dl result updated|uptodate|nonet|failed|checkfailed|fwupdated|imagecheckfailed|cancelled   (a download
 #        result shown on home until the next input)
+#        scan signal KHZ RSSI SNR   (what the guide scan measures on a frequency; 0 0 where none is set)
+#        scan step N   (the scan running measures its next N frequencies; it moves only on this op)
 
 scenario splash
 @0 render t0000
@@ -1171,3 +1173,194 @@ set lang lt
 render lt_list
 set lang ga
 render ga_list
+
+# The guide scan. The Seek list in AM with a guide: Scan band inside a band and Scan all; outside a band only Scan all;
+# none without a guide or in FM.
+scenario scan_seek
+press
+turn -5
+press
+turn 2
+render
+long
+turn 30
+press
+turn -5
+press
+render outside
+
+scenario scan_seek_none
+set guide off
+press
+turn -5
+press
+render
+long
+press
+turn 5
+press
+long
+press
+turn -5
+press
+render fm
+
+# Scan band at 13:05 from 6000 kHz: seven frequencies on air in 49m. Scanning shows the frequency last tuned and the
+# count; the knob does not tune. At the end the results, strongest first, ties by SNR; the radio tunes to the selected
+# row as it moves. A long press returns to the frequency the scan started on.
+scenario scan_band
+ntp 13:05
+scan signal 6070 48 21
+scan signal 5900 41 17
+scan signal 5955 36 14
+scan signal 5930 30 11
+scan signal 5920 24 8
+scan signal 5910 24 5
+turn -14
+press
+turn -5
+press
+turn 2
+press
+render start
+scan step 3
+render
+turn 3
+render turned
+scan step 4
+render results
+turn 1
+render next
+long
+render home
+
+# A press on a row keeps its frequency; Last scan reopens the results, tuned to the first row, and Back returns to the
+# frequency the scan started on and to the Seek list. The list closes after 8 s, keeping the selected frequency.
+scenario scan_results
+ntp 13:05
+scan signal 6070 48 21
+scan signal 5900 41 17
+scan signal 5955 36 14
+scan signal 5930 30 11
+scan signal 5920 24 8
+scan signal 5910 24 5
+turn -14
+press
+turn -5
+press
+turn 2
+press
+scan step 7
+turn 4
+render scrolled
+press
+render kept
+press
+turn -5
+press
+turn 4
+render last
+press
+render reopened
+side
+render back
+long
+render home
+press
+turn -5
+press
+turn 4
+press
+turn 2
+@20000 render timeout
+
+# A press or Back stops the scan with the results so far; a long press cancels it with none, and the Seek list has no
+# Last scan.
+scenario scan_stop
+ntp 13:05
+scan signal 5900 41 17
+scan signal 5910 24 5
+turn -14
+press
+turn -5
+press
+turn 3
+press
+scan step 2
+render all
+side
+render stopped
+side
+render back
+press
+turn -5
+press
+turn 3
+press
+scan step 1
+press
+render pressed
+long
+press
+turn -5
+press
+turn 2
+press
+scan step 1
+long
+render cancelled
+press
+turn -5
+press
+render seek
+
+# Nothing heard; Last scan in the Seek list.
+scenario scan_nothing
+ntp 13:05
+press
+turn -5
+press
+turn 2
+press
+scan step 7
+render
+side
+press
+turn -5
+press
+turn 4
+render last
+
+# Without the clock every listed frequency is scanned, irregular entries included.
+scenario scan_unset
+press
+turn -5
+press
+turn 2
+press
+render
+scan step 8
+render done
+
+# The scan screens in long languages.
+scenario scan_lang
+set lang hu
+ntp 13:05
+press
+turn -5
+press
+render seek
+turn 3
+press
+scan step 2
+render all
+scan step 5
+render nothing
+set lang lt
+render lt_nothing
+side
+press
+turn -5
+press
+turn 4
+render lt_seek

@@ -2,12 +2,15 @@
 // the model, and WiFi state that follows Join.
 #pragma once
 #include <cstring>
+#include <map>
 #include <string>
+#include <utility>
 
 #include "clock_core.h"
 #include "guide_core.h"
 #include "i18n_strings.h"
 #include "radio_model.h"
+#include "scan_core.h"
 #include "ui.h"
 #include "util.h"
 
@@ -32,6 +35,11 @@ struct Sim {
     uint32_t promptAt = 0;
     std::string dlVersion;
     int64_t commands[64] = {};  // how often each radio::Cmd was emitted
+    // The guide scan as the radio task runs it, on the sample guide: it measures only on step(), the signal set for
+    // the frequency in `signal` (RSSI 0 elsewhere).
+    scan::State scanState;
+    scan::Cursor scanCursor;
+    std::map<int, std::pair<int, int>> signal;
 
     Sim() {
         radio::defaults(s);
@@ -51,7 +59,47 @@ struct Sim {
         guide::check(guide::MemSource(table.data(), table.size()), table.size(), info);
         st.guide = &info;
         st.hits = &hits;
+        st.scan = &scanState;
+        st.guideString = sampleString;
         ui.begin(kBoot);
+    }
+
+    // A string of the sample guide, for the scan's names.
+    static bool sampleString(uint32_t, uint16_t idx, char* out) {
+        static const std::string sample = readFile(t::root() + "/radio/test/guide/sample.bin");
+        static guide::Info i;
+        const guide::MemSource src(sample.data(), sample.size());
+        if (!i.valid) guide::check(src, sample.size(), i);
+        return guide::readString(src, i, idx, out);
+    }
+
+    // Scan band or Scan all, as radio::startScan: not in FM, outside a band for the band, or while one runs.
+    void startScan(scan::Scope scope) {
+        int band;
+        int32_t lo, hi;
+        if (radio::isFm(s.mode) || scanState.phase == scan::Phase::Running ||
+            !radio::scanRange(s.hz, s.mode, scope == scan::Scope::All, band, lo, hi))
+            return;
+        scan::start(scanState, scope, band, lo, hi, s.hz, st.utcMs);
+        const guide::MemSource src(table.data(), table.size());
+        scan::first(src, info, scanCursor, lo, hi, st.utcMs);
+        scan::Cursor c = scanCursor;
+        uint16_t khz, name;
+        while (scan::next(src, info, c, khz, name)) scanState.total++;
+        if (!scanState.total) scan::stop(scanState);
+    }
+
+    // The next n measurements of the scan running; it ends after its last frequency.
+    void scanStep(int n) {
+        const guide::MemSource src(table.data(), table.size());
+        for (; n > 0 && scanState.phase == scan::Phase::Running; n--) {
+            uint16_t khz, name;
+            if (!scan::next(src, info, scanCursor, khz, name)) break;
+            const auto it = signal.find(khz);
+            const int rssi = it == signal.end() ? 0 : it->second.first, snr = it == signal.end() ? 0 : it->second.second;
+            scan::measured(scanState, {khz, static_cast<uint8_t>(rssi), static_cast<uint8_t>(snr), name});
+            if (scanState.done >= scanState.total) scan::stop(scanState);
+        }
     }
 
     void guideOff() {
@@ -98,6 +146,9 @@ struct Sim {
                 case radio::Cmd::NtpServer: radio::setNtpServer(s, ui.serverText()); break;
                 case radio::Cmd::GuideUpdate:
                 case radio::Cmd::FirmwareUpdate: break;
+                case radio::Cmd::GuideScan: startScan(static_cast<scan::Scope>(c.v)); break;
+                case radio::Cmd::GuideScanStop: scan::stop(scanState); break;
+                case radio::Cmd::GuideScanCancel: scan::cancel(scanState); break;
                 case radio::Cmd::Join:
                     std::strncpy(ssid, ui.joinSsid(), sizeof ssid - 1);
                     st.netSaved = true;

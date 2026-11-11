@@ -6,6 +6,7 @@
 #include "gfx.h"
 #include "guide_core.h"
 #include "radio_model.h"
+#include "scan_core.h"
 
 namespace ui {
 
@@ -50,6 +51,10 @@ struct Status {
     const guide::Info* guide = nullptr;
     const guide::Hits* hits = nullptr;
     bool netSaved = true;    // a WiFi network is configured
+    // The guide scan (nullptr: none), and the guide table's string `idx` for its names: false, with `out` empty, when
+    // the table changed since `generation`.
+    const scan::State* scan = nullptr;
+    bool (*guideString)(uint32_t generation, uint16_t idx, char* out) = nullptr;
 };
 
 // The download mode's screen (a boot of its own, see components/download): the step, the bytes while downloading, and
@@ -79,9 +84,9 @@ struct Output {
     }
 };
 
-enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station, Lamp };
+enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station, Lamp, Scanning };
 enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Language, Time,
-                              Guide, GuideSettings, FirmwareSettings };
+                              Guide, GuideSettings, FirmwareSettings, ScanResults };
 enum class AdjustId : uint8_t { Volume, Contrast };
 enum class InfoId : uint8_t { Wifi, About, GuideEntry };
 
@@ -106,8 +111,8 @@ class Ui {
 public:
     void begin(uint32_t now);
     void event(const Event& e, uint32_t now, const radio::State& s, const Status& st, Output& out);
-    // Time-driven transitions: splash end, menu and confirm timeouts. The splash ending, by time or by an input,
-    // emits Cmd::SplashEnd once.
+    // Time-driven transitions: splash end, menu and confirm timeouts, the end of a guide scan. The splash ending, by
+    // time or by an input, emits Cmd::SplashEnd once.
     void tick(uint32_t now, const radio::State& s, const Status& st, Output& out);
     void render(gfx::Frame& f, uint32_t now, const radio::State& s, const Status& st);
 
@@ -154,6 +159,10 @@ private:
     void stopSeek(const Status& st, Output& out);
     // The lamp screen, over a list as an adjust screen or in place of another screen; it turns the lamp on.
     void openLamp(const Status& st, Output& out);
+    // The guide scan's results: the receiver tunes to the selected row, and Back to the frequency the scan started on.
+    void openScan(bool push, uint32_t now, const radio::State& s, const Status& st, Output& out);
+    void scanTune(const Status& st, Output& out) const;
+    void scanBack(const Status& st, Output& out) const;
 
     void drawSplash(gfx::Frame& f, uint32_t t);
     void drawHome(gfx::Frame& f, uint32_t now, const radio::State& s, const Status& st);
@@ -169,6 +178,7 @@ private:
     void startEntry(const char* ssid, const char* value, int idx);
     void drawConfirm(gfx::Frame& f, const radio::State& s);
     void drawMessage(gfx::Frame& f);
+    void drawScanning(gfx::Frame& f, const radio::State& s, const Status& st);
 
     View view_ = View::Splash;
     uint32_t splashStart_ = 0;
@@ -199,11 +209,15 @@ private:
         guide::Entry e;
         char name[guide::kStrMax + 1], lang[guide::kStrMax + 1], target[guide::kStrMax + 1];
     } guideEntry_{};
+    int scanFrom_ = -1;  // the id of the last scan when Scan band or Scan all was pressed
+    // The scan the results list was built from (its id and count measured): the names are read once per scan.
+    int builtScan_ = -1;
+    uint16_t builtDone_ = 0;
 
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
                                Bandwidth, Seek, Join, Language, Station, ToggleTimeSync, Server, Lamp, GuideEntry,
-                               GuideUpdate, FirmwareUpdate };
+                               GuideUpdate, FirmwareUpdate, Scan, LastScan, ScanResult };
     struct Item {
         char t[48];
         char mid[14];

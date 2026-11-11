@@ -44,6 +44,10 @@ var RDS = { sync: false, ps: '', rt: '', pty: 0, seq: 0 };
 rds = () => RDS;
 present = () => {};
 lastSeekStep = 1e15;
+// The guide scan moves only on `scan step`, and measures the signals `scan signal` set (none elsewhere).
+var SIG = {};
+scanMeasure = k => SIG[k] || [0, 0];
+scanStepMs = 1e15;
 function fbText() { return Array.from(fb).join(''); }
 """
 
@@ -151,6 +155,14 @@ def run(script, scenario):
                     done, total = (int(args[1]), int(args[2])) if len(args) > 2 else (0, 0)
                     ctx.eval(f"S.view = 'download'; S.stack = []; S.dl = {{ kind: {json.dumps(kind)}, "
                              f"step: {json.dumps(args[0])}, done: {done}, total: {total}, frozen: true }}")
+        elif op == "scan":
+            # The guide scan's receiver: the signal measured on a frequency, or the next N measurements.
+            if args[0] == "signal":
+                ctx.eval(f"SIG[{int(args[1])}] = [{int(args[2])}, {int(args[3])}]")
+            elif args[0] == "step":
+                ctx.eval(f"for (let i = 0; i < {int(args[1])} && S.scan && S.scan.phase === 'running'; i++) scanStep()")
+            else:
+                raise ValueError(f"{name}: unknown scan {args[0]}")
         elif op == "ntp":
             h, m = (int(x) for x in args[0].split(":"))
             ctx.eval(f"ntpSync({DAY + (h * 60 + m) * 60000})")
