@@ -261,7 +261,7 @@ TEST(side_press_is_back) {
     Menu i;
     i.ev(3100, EventType::Turn, -3);
     i.ev(3200, EventType::Press);
-    i.ev(3300, EventType::Turn, 7);
+    i.ev(3300, EventType::Turn, 8);
     i.ev(3400, EventType::Press);  // About
     CHECK(i.ui.view() == View::Info);
     i.ev(3500, EventType::Side);
@@ -442,7 +442,7 @@ TEST(language_setting) {
     Menu m;
     m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);  // Settings
-    m.ev(3300, EventType::Turn, 6);
+    m.ev(3300, EventType::Turn, 7);
     m.ev(3400, EventType::Press);  // Language list, current language preselected
     CHECK(m.ui.listId() == ListId::Language);
     CHECK_EQ(m.ui.cursor(), 0);
@@ -550,15 +550,60 @@ TEST(guide_station_and_update) {
     CHECK(m.ui.listId() == ListId::GuideSettings);
 }
 
+TEST(firmware_settings_and_update) {
+    Menu m;
+    m.ev(3100, EventType::Turn, -3);
+    m.ev(3200, EventType::Press);  // Settings
+    m.ev(3300, EventType::Turn, 6);
+    m.ev(3400, EventType::Press);  // Firmware: Version, not selectable, and Update
+    CHECK(m.ui.listId() == ListId::FirmwareSettings);
+    CHECK_EQ(m.ui.cursor(), 1);
+    m.ev(3500, EventType::Turn, 1);
+    CHECK_EQ(m.ui.cursor(), -1);  // Back: Version is skipped
+    m.ev(3600, EventType::Turn, 1);
+    CHECK_EQ(m.ui.cursor(), 1);
+    m.ev(3700, EventType::Press);
+    CHECK_EQ(m.commands[static_cast<int>(radio::Cmd::FirmwareUpdate)], 1);
+    CHECK_EQ(m.commands[static_cast<int>(radio::Cmd::GuideUpdate)], 0);
+    // Without a configured network the press does nothing.
+    m.wifiNone();
+    m.ev(3800, EventType::Press);
+    CHECK_EQ(m.commands[static_cast<int>(radio::Cmd::FirmwareUpdate)], 1);
+    CHECK(m.ui.listId() == ListId::FirmwareSettings);
+}
+
+// The install prompt: a press installs; a long press and the side button, short or held, cancel; turns are ignored.
+TEST(firmware_prompt_answers) {
+    CHECK(ui::promptAnswer(EventType::Press) == ui::PromptAnswer::Install);
+    for (EventType e : {EventType::LongPress, EventType::Side, EventType::SideHold})
+        CHECK(ui::promptAnswer(e) == ui::PromptAnswer::Cancel);
+    for (EventType e : {EventType::Turn, EventType::HoldTurn}) CHECK(ui::promptAnswer(e) == ui::PromptAnswer::None);
+}
+
 TEST(guide_result_after_splash) {
     Sim r;
-    r.ui.result("Guide updated", Sim::kBoot + 500);  // during the splash: kept for its end
+    r.ui.result("Guide updated");  // during the splash: kept for its end
     r.render(2000);
     CHECK(r.ui.view() == View::Splash);
     r.render(2700);  // the splash ends
     CHECK(r.ui.view() == View::Home);
     CHECK(r.render(2800).get(0, 0));  // the inverted top row
-    CHECK(r.render(5600).get(0, 0));
-    CHECK(!r.render(5800).get(0, 0));
+    CHECK(r.render(60000).get(0, 0));  // still there a minute later
+    const auto hz = r.s.hz;
+    r.ev(60100, EventType::Turn, 1);  // the next input clears it and acts as usual
+    CHECK(r.s.hz != hz);
+    CHECK(!r.render(60200).get(0, 0));
+}
+
+// A result after the splash shows at once; a toast replaces it and ends on its own.
+TEST(result_on_home_until_input) {
+    Sim r;
+    r.render(2700);
+    r.ui.result("Download failed");
+    CHECK(r.render(2800).get(0, 0));
+    CHECK(r.render(30000).get(0, 0));
+    r.ui.toast("Saved", Sim::kBoot + 30000);
+    CHECK(r.render(30100).get(0, 0));
+    CHECK(!r.render(30000 + ui::kToastMs + 100).get(0, 0));
 }
 

@@ -138,7 +138,8 @@ while muted, so that the flag fits.
 
 ### Messages in the top row
 
-Short messages replace the top row for 1.5 s, in inverted text.
+Short messages replace the top row for 1.5 s, in inverted text. The result of a guide or firmware download stays
+until the wheel or the side button is next used (see [Guide](#guide) and [Firmware](#firmware)).
 
 ![A message: Saved as preset 6](images/guide/home_preset_save.png)
 
@@ -148,7 +149,7 @@ Short messages replace the top row for 1.5 s, in inverted text.
 | `Presets full` | A long press found 20 presets already saved. |
 | `No seek in SSB` | A seek was started in LSB or USB. |
 | `Joining Telenor-5G` | A WiFi password was entered for the network Telenor-5G. |
-| `Update cancelled` | A firmware update was cancelled on the K-Radio. |
+| `Update cancelled` | A firmware update was cancelled on the K-Radio: an upload from the web page, or Settings > Firmware > Update. |
 
 During a seek the top row shows the band and `Seek ▶` (up) or `Seek ◀` (down).
 
@@ -405,7 +406,7 @@ and Mute, select it.
 
 ![Settings, first part: WiFi Lab, AGC on, Contrast 15, Light off](images/guide/settings.png)
 
-![Settings, last part: Time --:--, Guide B26, Language English, About](images/guide/settings_about.png)
+![Settings, last part: Guide B26, Firmware 2026.46.0, Language English, About](images/guide/settings_about.png)
 
 | Entry | Value shown | Press it to |
 |---|---|---|
@@ -415,6 +416,7 @@ and Mute, select it.
 | Light | `off`, the lamp level (1 to 15) while the lamp is on, or `SOS` | open the lamp screen |
 | Time | the time in UTC, or `--:--` before the clock is set | open the Time list |
 | Guide | the frequency guide's season (`B26`), or nothing without a guide | open the Guide list |
+| Firmware | the Havoc Radio version | open the Firmware list |
 | Language | the language's name | choose the language |
 | About | | show the version, address, battery level and time |
 
@@ -535,22 +537,71 @@ the kilobytes received. The side button (Back) cancels at any step. The whole mo
 
 ![Download mode: Downloading, a bar, 92/187 KB](images/guide/guide_download_get.png)
 
-The K-Radio then restarts into the normal home screen and shows the result in the top row for 3 s: `Guide updated`,
-`Up to date` (the loaded guide is the current one), `No network` (the network could not be joined), `Download failed`
-or `Guide check failed` (the table did not pass the K-Radio's checks). After a cancel it shows nothing.
+The K-Radio then restarts into the normal home screen and shows the result in the top row until the wheel or the side
+button is next used: `Guide updated`, `Up to date` (the loaded guide is the current one), `No network` (the network
+could not be joined), `Download failed` or `Guide check failed` (the table did not pass the K-Radio's checks). After a
+cancel it shows nothing.
 
 ![After the download: Guide updated](images/guide/guide_result_updated.png)
 
 The same download can be started over the network with `POST http://radio.local/api/guide/update`: without a saved
 network the K-Radio answers 409 with `{"error": "no network"}`; otherwise it answers 202 and restarts into the
 download mode. `GET /api/guide` describes the loaded guide (season, entries, length, SHA-256 and EiBi's date) and,
-after a download since power-up, its `last_update`: the result (`updated`, `up to date`, `no network`,
-`download failed`, `check failed` or `cancelled`), the step it ended in and the lowest free heap.
+after a download since power-up, its `last_update`: the kind of the last download (`guide` or `firmware`), the result
+(`updated`, `up to date`, `no network`, `download failed`, `check failed` or `cancelled`), the step it ended in and
+the lowest free heap.
 
 The new guide is written beside the loaded one and checked before it replaces it. A failed, cancelled or cut-off
 download, also one cut by switching off, leaves the loaded guide in use. The download checks the table's SHA-256
 against the data repository's manifest; the connection itself does not verify GitHub's certificate. The guide can
 also be loaded from the web page, where `From file` takes a table from any source; see [The web page](#the-web-page).
+
+### Firmware
+
+Firmware shows the running Havoc Radio version. Nothing checks for new firmware on its own: an update starts only
+from `Update` here or from the web page.
+
+![Settings with Firmware selected: Firmware 2026.46.0](images/guide/firmware_settings.png)
+
+Pressing Firmware opens the Firmware list: `Version` with the version, which cannot be selected, and `Update`.
+
+![The Firmware list: Version 2026.46.0, Update (selected)](images/guide/firmware_settings_list.png)
+
+Pressing `Update` restarts the K-Radio into the download mode described under [Guide](#guide), titled
+`Updating firmware`. It needs a saved WiFi network: without one the entry shows `No network` and a press does
+nothing.
+
+![Update without a saved network: No network](images/guide/firmware_settings_nonet.png)
+
+The download mode joins the network and fetches the manifest of the latest release from the `firmware` branch of the
+havoc-radio repository on GitHub. When that release is not newer than the running version, the K-Radio restarts and
+shows `Up to date`. When it is newer, the K-Radio asks before anything is written:
+
+![The question: Install 2026.47.0?, Press: install, Long press: cancel](images/guide/firmware_download_prompt.png)
+
+A press installs. A long press, the side button or 30 s without a press cancels; the K-Radio restarts and shows
+`Update cancelled`. After a press the image is downloaded into the app slot that is not running, with a bar and the
+kilobytes received. The side button cancels during the download as well. The whole mode takes at most 240 s.
+
+![Download mode: Updating firmware, Downloading, a bar, 412/965 KB](images/guide/firmware_download_get.png)
+
+The image's length and SHA-256 must match the manifest, and the image must pass the SDK's check of an app image. Only
+then is the new slot selected for the next start. The K-Radio restarts into the new firmware and shows
+`Firmware updated` in the top row until the wheel or the side button is next used. `Download failed` means the download
+failed or did not match the manifest, and `Image check failed` that the image is not a valid app. After a failure or a
+cancel, also after switching off during the download, the running firmware stays and starts as before.
+
+![After the update: Firmware updated](images/guide/firmware_result_updated.png)
+
+The same update can be started over the network with `POST http://radio.local/api/firmware/update`, which skips the
+question on the K-Radio: without a saved network the K-Radio answers 409 with `{"error": "no network"}`; otherwise it
+answers 202 and restarts into the download mode. `GET /api/firmware` gives the version, the running app slot (`ota_0`
+or `ota_1`) and, after a download since power-up, `last_update` as in `GET /api/guide`. The web page's
+`Check for update` uses these.
+
+The image is not signed. The manifest's SHA-256 guards against a damaged or cut-off download, and the SDK's check
+against a file that is not an app; the connection does not verify GitHub's certificate. An uploaded image is checked
+the same way by the SDK, after a press on the K-Radio.
 
 ### Language
 
@@ -666,8 +717,11 @@ The Settings view:
   it needs that device to be on the internet: on the K-Radio's own access point it fails with a message pointing to
   `From file`. `From file` sends a `stations.bin` chosen on the device, for example one saved from the data
   repository. The K-Radio checks every table it receives and keeps its loaded guide when a table fails.
-- Under `Firmware`, `Upload` installs new firmware (see [Firmware updates](#firmware-updates)). The section also shows
-  the version and the battery level.
+- Under `Firmware`, the section shows the version and the battery level. `Check for update` restarts the K-Radio
+  into its download mode, which installs a newer release from GitHub without asking on the K-Radio (see
+  [Firmware](#firmware)). The page says so, reconnects once the K-Radio is back, and then shows the result of the last
+  check, for example `Last check: Up to date (2026.46.0).` `Upload` installs a firmware file (see
+  [Firmware updates](#firmware-updates)).
 
 The Screen view shows the K-Radio's screen as it is, enlarged four times. It reads the screen from
 `GET http://radio.local/api/screen` about four times a second while the view is shown and the browser tab is in
@@ -676,15 +730,20 @@ front.
 The page uses the language chosen on the K-Radio. It shows `No connection` beside the time while it cannot reach the
 K-Radio.
 
-The page has no password. Anyone on the same network can tune the K-Radio and change its presets. Installing
-firmware needs a press of the wheel on the K-Radio itself. The K-Radio connects to the internet in two cases: to the
-NTP server while time sync is on, and to GitHub (`raw.githubusercontent.com`) in the download mode that
-`Update guide` starts.
+The page has no password. Anyone on the same network can tune the K-Radio and change its presets. Installing an
+uploaded firmware file needs a press of the wheel on the K-Radio itself. `Check for update` installs without a press,
+but only the latest Havoc Radio release from GitHub. The K-Radio connects to the internet in two cases: to the NTP
+server while time sync is on, and to GitHub (`raw.githubusercontent.com`) in the download mode that `Update guide`,
+`Update` in Settings > Firmware or the web page's `Check for update` starts.
 
 ## Firmware updates
 
-New Havoc Radio firmware installs from the web page. The firmware file is `havoc-radio.bin`;
-[installer.md](installer.md#after-installing) says where it comes from.
+New Havoc Radio firmware installs in two ways:
+
+- The K-Radio downloads the latest release itself, from Settings > Firmware > Update or from the web page's
+  `Check for update`; see [Firmware](#firmware).
+- A firmware file is uploaded from the web page. The file is `havoc-radio.bin`;
+  [installer.md](installer.md#after-installing) says where it comes from. The steps follow.
 
 1. Open the web page's Settings view. Under `Firmware`, choose the file and press `Upload`. The page shows "Press the knob on the
    radio within 30 s to install."

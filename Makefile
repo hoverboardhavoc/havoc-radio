@@ -46,6 +46,7 @@ CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Werror -ffp-contract=off -DSRC_ROOT
 	-I$(RADIO)/components/input/include -I$(RADIO)/components/si4732/include -I$(RADIO)/components/rds/include \
 	-I$(RADIO)/components/clock/include -I$(RADIO)/components/lamp/include -I$(RADIO)/components/guide/include \
 	-I$(RADIO)/components/web/include \
+	-I$(RADIO)/components/download/include \
 	-I$(GEN) -I$(RADIO)/test
 
 LIB_SRC := $(RADIO)/components/gfx/gfx.cpp $(RADIO)/components/ui/ui.cpp $(RADIO)/components/ui/i18n_json.cpp \
@@ -53,7 +54,7 @@ LIB_SRC := $(RADIO)/components/gfx/gfx.cpp $(RADIO)/components/ui/ui.cpp $(RADIO
 	$(RADIO)/components/input/input_logic.cpp $(RADIO)/components/rds/rds.cpp \
 	$(RADIO)/components/clock/clock_core.cpp $(RADIO)/components/lamp/lamp_core.cpp \
 	$(RADIO)/components/guide/guide_core.cpp $(RADIO)/components/guide/guide_slots.cpp \
-	$(RADIO)/components/guide/guide_fetch.cpp $(RADIO)/components/web/streams.cpp
+	$(RADIO)/components/download/download_core.cpp $(RADIO)/components/web/streams.cpp
 TEST_SRC := $(wildcard $(RADIO)/test/*.cpp)
 GEN_SRC := $(GEN)/fonts_data.cpp $(GEN)/i18n_strings.cpp
 OBJ := $(patsubst %.cpp,$(HOST)/obj/%.o,$(LIB_SRC) $(TEST_SRC)) $(GEN_SRC:.cpp=.o)
@@ -64,6 +65,7 @@ test: $(HOST)/tests $(GEN)/i18n_strings.jsonl install-image
 	$(HOST)/tests
 	$(NODE) $(RADIO)/test/test_page.js $(ROOT)
 	$(PY) $(RADIO)/test/test_install_image.py
+	$(PY) $(RADIO)/test/test_firmware_branch.py
 	$(MAKE) installer-test
 
 # installer/SPEC.md, Tests 1 to 4.

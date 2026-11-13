@@ -181,6 +181,20 @@ TEST(strings_fit_slots) {
         for (Str k : {Str::guide_updated, Str::up_to_date, Str::no_network, Str::download_failed,
                       Str::guide_check_failed})
             c.fit(std::string("toast '") + c.tr(k) + "'", w(c.tr(k)), 126);
+        // The firmware. Settings: the Firmware row with a long version; Settings > Firmware: Version with it, and Update
+        // with No network. Download mode: the title from x = 0, Back: cancel 3 px clear of the largest KB count of an
+        // app slot. The install prompt's lines from x = 0, with a long version. Results on home as toasts.
+        const char* version = "2026.52.10";
+        c.row(c.tr(Str::firmware), version);
+        c.row(c.tr(Str::version), version);
+        c.row(c.tr(Str::update), c.tr(Str::no_network));
+        c.fit(std::string("download '") + c.tr(Str::updating_firmware) + "'", w(c.tr(Str::updating_firmware)), 128);
+        c.fit("download 'Back: cancel'", w(c.tr(Str::back_cancel)) + 3 + w("1024/1024 KB"), 128);
+        for (const std::string& s : {fmt(c.tr(Str::install_s), version), fmt(c.tr(Str::confirm_press)),
+                                     fmt(c.tr(Str::confirm_long))})
+            c.fit("prompt '" + s + "'", w(s), 128);
+        for (Str k : {Str::firmware_updated, Str::image_check_failed, Str::toast_cancelled})
+            c.fit(std::string("toast '") + c.tr(k) + "'", w(c.tr(k)), 126);
         // Full-screen messages, centred.
         c.fit("message", w(c.tr(Str::installing)), 128);
         c.fit("message", w(c.tr(Str::battery_empty)), 128);

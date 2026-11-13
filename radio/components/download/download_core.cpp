@@ -1,0 +1,487 @@
+#include "download_core.h"
+
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+
+namespace download {
+
+namespace {
+
+bool ieq(const char* a, const char* b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        char x = a[i], y = b[i];
+        if (x >= 'A' && x <= 'Z') x = static_cast<char>(x - 'A' + 'a');
+        if (y >= 'A' && y <= 'Z') y = static_cast<char>(y - 'A' + 'a');
+        if (x != y) return false;
+    }
+    return true;
+}
+
+// A header's value when `line` is `name: value`, else nullptr.
+const char* header(const char* line, const char* name) {
+    const size_t n = std::strlen(name);
+    if (std::strlen(line) <= n || !ieq(line, name, n) || line[n] != ':') return nullptr;
+    const char* v = line + n + 1;
+    while (*v == ' ' || *v == '\t') v++;
+    return v;
+}
+
+int hexval(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return -1;
+}
+
+// A minimal reader for one flat JSON object.
+struct Json {
+    const char* p;
+    const char* end;
+    void ws() {
+        while (p < end && (*p == ' ' || *p == '\t' || *p == '\r' || *p == '\n')) p++;
+    }
+    bool eat(char c) {
+        ws();
+        if (p < end && *p == c) {
+            p++;
+            return true;
+        }
+        return false;
+    }
+    // A string into out (escapes other than \uXXXX kept as their character; \uXXXX as '?').
+    bool str(char* out, size_t n) {
+        if (!eat('"')) return false;
+        size_t k = 0;
+        while (p < end && *p != '"') {
+            char c = *p++;
+            if (c == '\\') {
+                if (p >= end) return false;
+                c = *p++;
+                if (c == 'u') {
+                    if (end - p < 4) return false;
+                    p += 4;
+                    c = '?';
+                } else if (c == 'n') {
+                    c = '\n';
+                } else if (c == 't') {
+                    c = '\t';
+                }
+            }
+            if (k + 1 < n) out[k++] = c;
+        }
+        if (n) out[k] = 0;
+        return eat('"');
+    }
+    // Any value; numbers into *num when given.
+    bool value(char* s, size_t n, bool* isStr, double* num, bool* isNum) {
+        ws();
+        *isStr = *isNum = false;
+        if (p >= end) return false;
+        if (*p == '"') {
+            *isStr = true;
+            return str(s, n);
+        }
+        if (*p == '{' || *p == '[') {
+            int depth = 0;
+            bool inStr = false;
+            for (; p < end; p++) {
+                if (inStr) {
+                    if (*p == '\\') p++;
+                    else if (*p == '"') inStr = false;
+                } else if (*p == '"') {
+                    inStr = true;
+                } else if (*p == '{' || *p == '[') {
+                    depth++;
+                } else if ((*p == '}' || *p == ']') && --depth == 0) {
+                    p++;
+                    return true;
+                }
+            }
+            return false;
+        }
+        const char* start = p;
+        while (p < end && *p != ',' && *p != '}' && *p != ' ' && *p != '\r' && *p != '\n' && *p != '\t') p++;
+        if (p == start || p - start > 31) return false;
+        char tok[32];
+        std::memcpy(tok, start, p - start);
+        tok[p - start] = 0;
+        if (!std::strcmp(tok, "true") || !std::strcmp(tok, "false") || !std::strcmp(tok, "null")) return true;
+        char* e;
+        *num = std::strtod(tok, &e);
+        *isNum = *e == 0;
+        return *isNum;
+    }
+};
+
+}  // namespace
+
+const char* stepName(Step s) {
+    switch (s) {
+        case Step::Join: return "join";
+        case Step::Manifest: return "manifest";
+        case Step::Table: return "table";
+        case Step::Check: return "check";
+        case Step::Prompt: return "prompt";
+        case Step::Image: return "image";
+    }
+    return "?";
+}
+
+int Response::line(char* out, int n) {
+    int k = 0;
+    for (;;) {
+        if (pos_ == fill_) {
+            fill_ = h_.read(buf_, sizeof buf_);
+            pos_ = 0;
+            if (fill_ <= 0) {
+                fill_ = 0;
+                return -1;
+            }
+        }
+        const char c = static_cast<char>(buf_[pos_++]);
+        if (c == '\n') break;
+        if (c != '\r' && k + 1 < n) out[k++] = c;  // a longer line is cut; no header of interest is that long
+    }
+    out[k] = 0;
+    return k;
+}
+
+namespace {
+
+// A decimal number of up to 18 digits at p; the character after it in *end. -1 when there is none.
+int64_t number(const char* p, const char** end) {
+    int64_t v = 0;
+    int digits = 0;
+    for (; *p >= '0' && *p <= '9' && digits < 18; p++, digits++) v = v * 10 + (*p - '0');
+    *end = p;
+    return digits && !(*p >= '0' && *p <= '9') ? v : -1;
+}
+
+}  // namespace
+
+bool Response::head() {
+    char l[128];
+    if (line(l, sizeof l) < 0) return false;
+    // "HTTP/1.1 200 OK"
+    const char* sp = std::strchr(l, ' ');
+    if (std::strncmp(l, "HTTP/1.", 7) || !sp) return false;
+    status_ = std::atoi(sp + 1);
+    for (int lines = 0;; lines++) {
+        const int n = line(l, sizeof l);
+        if (n < 0 || lines > 100) return false;
+        if (n == 0) break;
+        if (const char* v = header(l, "content-length")) {
+            const char* e;
+            length_ = number(v, &e);
+            if (length_ < 0 || *e) return false;
+        }
+        if (const char* v = header(l, "transfer-encoding")) chunked_ = std::strstr(v, "chunked") != nullptr;
+        // "bytes 586000-854063/854064"; anything else leaves the range unknown.
+        if (const char* v = header(l, "content-range")) {
+            rangeFrom_ = rangeTo_ = rangeTotal_ = -1;
+            const char *e = v, *f, *t;
+            int64_t from, to, total;
+            if (!std::strncmp(v, "bytes ", 6) && (from = number(v + 6, &f)) >= 0 && *f == '-' &&
+                (to = number(f + 1, &t)) >= 0 && *t == '/' && (total = number(t + 1, &e)) >= 0 && !*e) {
+                rangeFrom_ = from;
+                rangeTo_ = to;
+                rangeTotal_ = total;
+            }
+        }
+    }
+    left_ = length_;
+    return true;
+}
+
+bool Response::begin() { return head() && status_ == 200 && length_ >= 0 && !chunked_; }
+
+Err Response::resume(uint32_t from, uint32_t total) {
+    if (!head() || status_ != 206 || chunked_) return Err::Read;
+    if (rangeFrom_ != from || rangeTotal_ != total || rangeTo_ + 1 != rangeTotal_ || length_ != rangeTotal_ - rangeFrom_)
+        return Err::Length;
+    return Err::Ok;
+}
+
+int Response::body(uint8_t* out, int n) {
+    if (left_ <= 0) return 0;
+    if (n > left_) n = static_cast<int>(left_);
+    int got;
+    if (pos_ < fill_) {
+        got = fill_ - pos_ < n ? fill_ - pos_ : n;
+        std::memcpy(out, buf_ + pos_, got);
+        pos_ += got;
+    } else {
+        got = h_.read(out, n);
+        if (got <= 0) {  // cut off before Content-Length
+            error_ = got;
+            left_ = 0;
+            return -1;
+        }
+    }
+    left_ -= got;
+    return got;
+}
+
+bool parseManifest(const char* json, size_t n, Manifest& out) {
+    out = Manifest();
+    Json j{json, json + n};
+    if (!j.eat('{')) return false;
+    if (j.eat('}')) return true;
+    for (;;) {
+        char key[24], s[72];
+        bool isStr, isNum;
+        double num = 0;
+        if (!j.str(key, sizeof key) || !j.eat(':') || !j.value(s, sizeof s, &isStr, &num, &isNum)) return false;
+        if (!std::strcmp(key, "format") && isNum) out.format = static_cast<int>(num);
+        if (!std::strcmp(key, "version") && isStr && std::strlen(s) < sizeof out.version)
+            std::memcpy(out.version, s, std::strlen(s) + 1);
+        if (!std::strcmp(key, "length") && isNum && num >= 0 && num < 4294967296.0) out.length = static_cast<int64_t>(num);
+        if (!std::strcmp(key, "sha256") && isStr && std::strlen(s) == 64) {
+            out.hasSha = true;
+            for (int i = 0; i < 32; i++) {
+                const int hi = hexval(s[2 * i]), lo = hexval(s[2 * i + 1]);
+                if (hi < 0 || lo < 0) out.hasSha = false;
+                out.sha256[i] = static_cast<uint8_t>((hi << 4) | (lo & 15));
+            }
+        }
+        if (j.eat('}')) break;
+        if (!j.eat(',')) return false;
+    }
+    j.ws();
+    return j.p == j.end;
+}
+
+namespace {
+
+// One manifest of at most 2 KB, parsed. Err::Read when it cannot be fetched, Err::Cut when cut off, Err::Magic when
+// it is not a flat JSON object.
+Err getManifest(Http& http, const char* path, Manifest& m) {
+    if (!http.open(path, 0)) return Err::Read;
+    Response resp(http);
+    if (!resp.begin() || resp.length() > static_cast<int64_t>(kManifestMax)) return Err::Read;
+    char json[kManifestMax];
+    int got = 0;
+    for (;;) {
+        const int n = resp.body(reinterpret_cast<uint8_t*>(json) + got, static_cast<int>(sizeof json) - got);
+        if (n < 0) return Err::Cut;
+        if (n == 0) break;
+        got += n;
+    }
+    http.close();
+    if (!parseManifest(json, got, m) || !m.hasSha || m.length < 0) return Err::Magic;
+    return Err::Ok;
+}
+
+// One version field: 1 to 9 digits, ended by '.' or the string's end. Returns the character after it, or nullptr.
+const char* field(const char* p, uint32_t& out) {
+    out = 0;
+    int digits = 0;
+    for (; *p >= '0' && *p <= '9'; p++, digits++) out = out * 10 + static_cast<uint32_t>(*p - '0');
+    if (digits < 1 || digits > 9 || (*p && *p != '.')) return nullptr;
+    return p;
+}
+
+bool parseVersion(const char* s, uint32_t out[4]) {
+    for (int i = 0; i < 4; i++) out[i] = 0;
+    if (!s) return false;
+    for (int i = 0;; i++) {
+        if (i == 4 || !(s = field(s, out[i]))) return false;
+        if (!*s) return true;
+        s++;
+    }
+}
+
+// The body of `path`, `total` bytes, handed to put(data, n) as it arrives. A body cut off after n bytes is asked for
+// again from n with a Range request, at most kResumes times; a cut before the first byte asks for the whole body
+// again. Err::Read when a request is refused or not answered as asked, Err::Length when the answer is not `total`
+// bytes or not the range asked for, Err::Cut when cut off once more than resumed; put's error otherwise.
+template <class Put>
+Err getBody(Http& http, const char* path, uint32_t total, Progress& progress, Put put) {
+    uint32_t done = 0;
+    for (int cuts = 0;;) {
+        if (!http.open(path, done)) return Err::Read;
+        Response resp(http);
+        if (done == 0) {
+            if (!resp.begin()) return Err::Read;
+            if (resp.length() != total) return Err::Length;
+        } else {
+            const Err e = resp.resume(done, total);
+            if (e != Err::Ok) return e;
+        }
+        uint8_t buf[512];
+        int n;
+        while ((n = resp.body(buf, sizeof buf)) > 0) {
+            const Err e = put(buf, n);
+            if (e != Err::Ok) return e;
+            done += n;
+            progress.bytes(done, total);
+        }
+        http.close();
+        if (n == 0) return Err::Ok;
+        progress.cut(done, total, ++cuts, resp.error());
+        if (cuts > kResumes) return Err::Cut;
+    }
+}
+
+}  // namespace
+
+void firmwarePaths(const char* branch, char manifest[kPathMax], char image[kPathMax]) {
+    std::snprintf(manifest, kPathMax, "/hoverboardhavoc/havoc-radio/%s/%s/manifest.json", branch, kLayout);
+    std::snprintf(image, kPathMax, "/hoverboardhavoc/havoc-radio/%s/%s/havoc-radio.bin", branch, kLayout);
+}
+
+int compareVersions(const char* a, const char* b) {
+    uint32_t x[4], y[4];
+    if (!parseVersion(a, x) || !parseVersion(b, y)) return -2;
+    for (int i = 0; i < 4; i++)
+        if (x[i] != y[i]) return x[i] > y[i] ? 1 : -1;
+    return 0;
+}
+
+Report fetchGuide(Http& http, guide::Sink& sink, const guide::Info& loaded, Progress& progress) {
+    Report r;
+    auto fail = [&](Step s, Err e, Result res = Result::Failed) {
+        http.close();
+        r.step = s;
+        r.err = e;
+        r.result = res;
+        return r;
+    };
+    // The manifest: at most 2 KB, format 1.
+    progress.step(Step::Manifest);
+    Manifest m;
+    Err e = getManifest(http, kGuideManifestPath, m);
+    if (e != Err::Ok) return fail(Step::Manifest, e);
+    if (m.format != guide::kFormat) return fail(Step::Manifest, Err::Format);
+    if (loaded.valid && !std::memcmp(loaded.sha256, m.sha256, sizeof m.sha256)) {
+        r.result = Result::UpToDate;
+        return r;
+    }
+    if (m.length > guide::kSlotSize || m.length < guide::kHeaderLen) return fail(Step::Manifest, Err::TooLong);
+    // The table: the manifest's length, streamed into the free slot.
+    const uint32_t total = static_cast<uint32_t>(m.length);
+    progress.step(Step::Table);
+    progress.bytes(0, total);
+    bool begun = false;
+    e = getBody(http, kGuideTablePath, total, progress, [&](const uint8_t* data, int n) {
+        if (!begun) {  // the slot is erased once the answer's length is known to be the manifest's
+            begun = true;
+            const Err b = sink.begin(total);
+            if (b != Err::Ok) return b;
+        }
+        return sink.add(data, n);
+    });
+    if (e != Err::Ok) return fail(Step::Table, e);
+    // The SHA-256 and every table check; then the slots switch.
+    progress.step(Step::Check);
+    e = sink.finish(m.sha256);
+    if (e == Err::Hash || e == Err::Cut || e == Err::Write) return fail(Step::Check, e);
+    if (e != Err::Ok) return fail(Step::Check, e, Result::CheckFailed);
+    r.step = Step::Check;
+    r.result = Result::Updated;
+    return r;
+}
+
+Report fetchFirmware(Http& http, Ota& ota, const char* running, const char* manifestPath, const char* imagePath,
+                     Prompt* prompt, Progress& progress) {
+    Report r;
+    bool begun = false;
+    auto fail = [&](Step s, Err e, Result res = Result::Failed) {
+        http.close();
+        if (begun) ota.abort();
+        r.step = s;
+        r.err = e;
+        r.result = res;
+        return r;
+    };
+    // The manifest: at most 2 KB, with a version newer than the running one to go on.
+    progress.step(Step::Manifest);
+    Manifest m;
+    Err e = getManifest(http, manifestPath, m);
+    if (e != Err::Ok) return fail(Step::Manifest, e);
+    const int newer = compareVersions(m.version, running);
+    if (newer == -2) return fail(Step::Manifest, Err::Format);
+    if (newer <= 0) {
+        r.result = Result::UpToDate;
+        return r;
+    }
+    if (m.length == 0 || m.length > static_cast<int64_t>(ota.capacity())) return fail(Step::Manifest, Err::TooLong);
+    if (prompt) {
+        progress.step(Step::Prompt);
+        if (!prompt->confirm(m.version)) return fail(Step::Prompt, Err::Ok, Result::Cancelled);
+    }
+    // The image: the manifest's length, streamed into the inactive slot with its SHA-256 computed on the way. The slot
+    // is erased before the connection opens, so the server does not wait on the erase.
+    const uint32_t total = static_cast<uint32_t>(m.length);
+    progress.step(Step::Image);
+    progress.bytes(0, total);
+    e = ota.begin(total);
+    if (e != Err::Ok) return fail(Step::Image, e);
+    begun = true;
+    // A resumed image carries on in the same hash and the same slot writes.
+    guide::Sha256 hash;
+    e = getBody(http, imagePath, total, progress, [&](const uint8_t* data, int n) {
+        hash.update(data, n);
+        return ota.write(data, n);
+    });
+    if (e != Err::Ok) return fail(Step::Image, e);
+    // The SHA-256, the SDK's image check, then the slot selected.
+    progress.step(Step::Check);
+    uint8_t sha[32];
+    hash.finish(sha);
+    if (std::memcmp(sha, m.sha256, sizeof sha)) return fail(Step::Check, Err::Hash);
+    begun = false;  // end() releases the handle whatever it answers
+    e = ota.end();
+    if (e == Err::Image) return fail(Step::Check, e, Result::CheckFailed);
+    if (e != Err::Ok) return fail(Step::Check, e);
+    e = ota.activate();
+    if (e != Err::Ok) return fail(Step::Check, e);
+    r.step = Step::Check;
+    r.result = Result::Updated;
+    return r;
+}
+
+Request takeRequest(RequestStore& s) {
+    const Request r = s.get();
+    if (r == Request::None) return r;
+    s.clear();
+    return r > Request::FirmwareApi ? Request::None : r;
+}
+
+int requestUpdate(Request r, bool netSaved, RequestStore& s, char* body, size_t n) {
+    if (!netSaved) {
+        std::snprintf(body, n, "{\"error\":\"no network\"}");
+        return 409;
+    }
+    s.set(r);
+    std::snprintf(body, n, "{\"update\":\"requested\"}");
+    return 202;
+}
+
+const char* resultName(Result r) {
+    switch (r) {
+        case Result::Updated: return "updated";
+        case Result::UpToDate: return "up to date";
+        case Result::NoNetwork: return "no network";
+        case Result::Failed: return "download failed";
+        case Result::CheckFailed: return "check failed";
+        case Result::Cancelled: return "cancelled";
+        case Result::None: break;
+    }
+    return nullptr;
+}
+
+const char* kindName(Kind k) { return k == Kind::Firmware ? "firmware" : "guide"; }
+
+void lastUpdateJson(const LastUpdate& u, char* out, size_t n) {
+    const char* name = resultName(u.result);
+    if (!name) {
+        if (n) out[0] = 0;
+        return;
+    }
+    std::snprintf(out, n, "\"last_update\":{\"kind\":\"%s\",\"result\":\"%s\",\"step\":\"%s\",\"lowest_heap\":%lu}",
+                  kindName(u.kind), name, stepName(u.step), static_cast<unsigned long>(u.lowestHeap));
+}
+
+}  // namespace download

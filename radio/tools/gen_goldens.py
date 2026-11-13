@@ -51,7 +51,8 @@ BOOT = 1000  # power-on time in the prototype's clock; scenario times are relati
 DAY = 1794268800000  # 2026-11-10 00:00 UTC in ms: the date of an `ntp HH:MM` sync
 # `dl result NAME`: the string each download result shows on home.
 DL_RESULTS = {"updated": "guide_updated", "uptodate": "up_to_date", "nonet": "no_network", "failed": "download_failed",
-              "checkfailed": "guide_check_failed"}
+              "checkfailed": "guide_check_failed", "fwupdated": "firmware_updated",
+              "imagecheckfailed": "image_check_failed", "cancelled": "toast_cancelled"}
 
 
 def parse_scenarios(path):
@@ -136,13 +137,20 @@ def run(script, scenario):
             else:
                 raise ValueError(f"{name}: unknown rds {key}")
         elif op == "dl":
-            # Download mode at one step, or its result on home (3 s).
+            # Download mode at one step (`fw` first for the firmware), or its result on home (until the next input).
             if args[0] == "result":
-                ctx.eval(f"goHome(); toast(T({json.dumps(DL_RESULTS[args[1]])}), 3000)")
+                ctx.eval(f"goHome(); toast(T({json.dumps(DL_RESULTS[args[1]])}), Infinity)")
             else:
-                done, total = (int(args[1]), int(args[2])) if len(args) > 2 else (0, 0)
-                ctx.eval(f"S.view = 'download'; S.stack = []; S.dl = {{ step: {json.dumps(args[0])}, done: {done}, "
-                         f"total: {total}, frozen: true }}")
+                kind = "guide"
+                if args[0] == "fw":
+                    kind, args = "firmware", args[1:]
+                if args[0] == "prompt":
+                    ctx.eval(f"S.view = 'download'; S.stack = []; S.dl = {{ kind: 'firmware', step: 'prompt', "
+                             f"version: {json.dumps(args[1])}, done: 0, total: 0, promptAt: NOW, frozen: true }}")
+                else:
+                    done, total = (int(args[1]), int(args[2])) if len(args) > 2 else (0, 0)
+                    ctx.eval(f"S.view = 'download'; S.stack = []; S.dl = {{ kind: {json.dumps(kind)}, "
+                             f"step: {json.dumps(args[0])}, done: {done}, total: {total}, frozen: true }}")
         elif op == "ntp":
             h, m = (int(x) for x in args[0].split(":"))
             ctx.eval(f"ntpSync({DAY + (h * 60 + m) * 60000})")

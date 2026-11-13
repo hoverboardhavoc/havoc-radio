@@ -26,9 +26,11 @@ struct Sim {
     guide::Info info;
     guide::Hits hits;
     bool guideOn = true;
-    // Download mode at a step, drawn in place of the UI.
+    // Download mode at a step, drawn in place of the UI, and when the install prompt appeared.
     bool downloading = false;
     ui::Download dl;
+    uint32_t promptAt = 0;
+    std::string dlVersion;
     int64_t commands[64] = {};  // how often each radio::Cmd was emitted
 
     Sim() {
@@ -94,7 +96,8 @@ struct Sim {
                 case radio::Cmd::SeekStop: st.seeking = false; break;
                 case radio::Cmd::Lamp: st.lamp = static_cast<radio::Lamp>(c.v); break;
                 case radio::Cmd::NtpServer: radio::setNtpServer(s, ui.serverText()); break;
-                case radio::Cmd::GuideUpdate: break;
+                case radio::Cmd::GuideUpdate:
+                case radio::Cmd::FirmwareUpdate: break;
                 case radio::Cmd::Join:
                     std::strncpy(ssid, ui.joinSsid(), sizeof ssid - 1);
                     st.netSaved = true;
@@ -109,7 +112,19 @@ struct Sim {
     // An NTP sync at time t: UTC in ms since 1970.
     void ntp(uint32_t t, int64_t utcMs) { clock.synced(utcMs, kBoot + t); }
 
+    // Download mode ends in a restart: the splash, then the result on home (the prototype's restart()).
+    void restart(uint32_t t, const char* result) {
+        downloading = false;
+        ui.begin(kBoot + t);
+        if (result) ui.result(result);
+    }
+    // A cancel shows Update cancelled for the firmware and nothing for the guide.
+    void cancelDownload(uint32_t t) {
+        restart(t, dl.firmware ? i18n::tr(s.lang, i18n::Str::toast_cancelled) : nullptr);
+    }
+
     void tick(uint32_t t) {
+        if (downloading && dl.step == ui::Download::Step::Prompt && t - promptAt > ui::kPromptMs) cancelDownload(t);
         st.utcMs = clock.utcMs(kBoot + t);
         st.syncAgeMs = clock.syncAgeMs(kBoot + t);
         if (guideOn && !radio::isFm(s.mode))
@@ -123,6 +138,15 @@ struct Sim {
 
     void ev(uint32_t t, ui::EventType type, int n = 0) {
         tick(t);
+        // Download mode: the prompt's answer, or Back.
+        if (downloading) {
+            const ui::PromptAnswer a = dl.step == ui::Download::Step::Prompt ? ui::promptAnswer(type)
+                                       : type == ui::EventType::Side         ? ui::PromptAnswer::Cancel
+                                                                             : ui::PromptAnswer::None;
+            if (a == ui::PromptAnswer::Install) dl.step = ui::Download::Step::Get;
+            if (a == ui::PromptAnswer::Cancel) cancelDownload(t);
+            return;
+        }
         ui::Output o;
         ui.event({type, n}, kBoot + t, s, st, o);
         apply(o);

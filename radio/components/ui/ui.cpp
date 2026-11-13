@@ -288,12 +288,12 @@ void Ui::begin(uint32_t now) {
     depth_ = 0;
 }
 
-void Ui::endSplash(Output& out, uint32_t now) {
+void Ui::endSplash(Output& out) {
     releaseWheel();
     goHome();
     out.push(Cmd::SplashEnd);
     if (result_[0]) {
-        toast(result_, now, kResultMs);
+        showResult(result_);
         result_[0] = 0;
     }
 }
@@ -312,13 +312,19 @@ void Ui::popTo() {
 void Ui::toast(const char* text, uint32_t now, uint32_t ms) {
     copy(toast_, sizeof toast_, text);
     toastUntil_ = now + ms;
+    resultShown_ = false;
 }
 
-void Ui::result(const char* text, uint32_t now) {
+void Ui::showResult(const char* text) {
+    copy(toast_, sizeof toast_, text);
+    resultShown_ = true;
+}
+
+void Ui::result(const char* text) {
     if (view_ == View::Splash)
         copy(result_, sizeof result_, text);
     else
-        toast(text, now, kResultMs);
+        showResult(text);
 }
 
 void Ui::confirmInstall(uint32_t now) {
@@ -451,6 +457,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
                 copy(buf, sizeof buf, "--:--");
             add(tr(Str::time), buf, Act::Go, static_cast<int>(ListId::Time));
             add(tr(Str::guide), guideLoaded(st) ? st.guide->season : "", Act::Go, static_cast<int>(ListId::GuideSettings));
+            add(tr(Str::firmware), st.version, Act::Go, static_cast<int>(ListId::FirmwareSettings));
             add(tr(Str::language), i18n::kLangName[s.lang < i18n::kLangCount ? s.lang : 0], Act::Go,
                 static_cast<int>(ListId::Language));
             add(tr(Str::about), "", Act::Info, static_cast<int>(InfoId::About));
@@ -490,6 +497,13 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             cur_ = 1;
             break;
         }
+        // Settings > Firmware: the running version, not selectable, and Update, which needs a configured network.
+        case ListId::FirmwareSettings:
+            add(tr(Str::version), st.version, Act::None);
+            items_[count_ - 1].skip = true;
+            add(tr(Str::update), st.netSaved ? "" : tr(Str::no_network), Act::FirmwareUpdate);
+            cur_ = 1;
+            break;
         // Time: the sync switch, the server (cut to fit its row) and the age of the last sync, not selectable.
         case ListId::Time: {
             add(tr(Str::time_sync), s.timeSync ? tr(Str::on) : tr(Str::off), Act::ToggleTimeSync);
@@ -606,6 +620,9 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         case Act::GuideUpdate:
             if (st.netSaved) out.push(Cmd::GuideUpdate);
             return;
+        case Act::FirmwareUpdate:
+            if (st.netSaved) out.push(Cmd::FirmwareUpdate);
+            return;
         case Act::Station:
             if (!radio::isFm(s.mode)) return openList(ListId::Guide, true, s, st);
             if (depth_ < 4) stack_[depth_++] = list_;
@@ -633,7 +650,11 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
     // The side button's hold does nothing on the splash, a message or the confirm screen.
     if (e.type == EventType::SideHold && (view_ == View::Splash || view_ == View::Confirm)) return;
     lastInput_ = now;
-    if (view_ == View::Splash) return endSplash(out, now);
+    if (view_ == View::Splash) return endSplash(out);
+    if (resultShown_) {
+        resultShown_ = false;
+        toast_[0] = 0;
+    }
     stopSeek(st, out);
     if (view_ == View::List) build(list_.id, s, st);
     const int d = e.n;
@@ -783,7 +804,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
 }
 
 void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
-    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out, now);
+    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out);
     if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info || view_ == View::Lamp) &&
         now - lastInput_ > kMenuTimeoutMs)
         goHome();
@@ -855,7 +876,7 @@ void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
     char fs[16];
     const char* unit;
     radio::freqText(s, fs, sizeof fs, &unit);
-    const bool vol = now < volUntil_, toasting = toast_[0] && now < toastUntil_;
+    const bool vol = now < volUntil_, toasting = toast_[0] && (resultShown_ || now < toastUntil_);
     const char* band = radio::bandLabel(s.hz, s.mode);
     if (vol) {
         gfx::icon(f, 0, 0, gfx::Icon::Volume);
@@ -1132,11 +1153,19 @@ void Ui::drawConfirm(Frame& f, const State& s) {
     for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
 }
 
-// Download mode: the title, the step, during the download a bar by bytes with KB at the right, and Back: cancel.
+// Download mode: the title, the step, during the download a bar by bytes with KB at the right, and Back: cancel. The
+// firmware's install prompt: the version offered, and what a press and a long press do.
 void drawDownload(Frame& f, int lang, const Download& d) {
     f.clear();
-    gfx::text(f, 0, 0, i18n::tr(lang, Str::updating_guide));
     char t[96];
+    if (d.step == Download::Step::Prompt) {
+        snprintf(t, sizeof t, i18n::tr(lang, Str::install_s), d.version);
+        gfx::text(f, 0, 0, t);
+        gfx::text(f, 0, 12, i18n::tr(lang, Str::confirm_press));
+        gfx::text(f, 0, 24, i18n::tr(lang, Str::confirm_long));
+        return;
+    }
+    gfx::text(f, 0, 0, i18n::tr(lang, d.firmware ? Str::updating_firmware : Str::updating_guide));
     if (d.step == Download::Step::Join)
         snprintf(t, sizeof t, i18n::tr(lang, Str::toast_joining), d.ssid);
     else
@@ -1151,6 +1180,18 @@ void drawDownload(Frame& f, int lang, const Download& d) {
         gfx::textR(f, 128, 24, t);
     }
     gfx::text(f, 0, 24, i18n::tr(lang, Str::back_cancel));
+}
+
+PromptAnswer promptAnswer(EventType e) {
+    switch (e) {
+        case EventType::Press: return PromptAnswer::Install;
+        case EventType::LongPress:
+        case EventType::Side:
+        case EventType::SideHold: return PromptAnswer::Cancel;
+        case EventType::Turn:
+        case EventType::HoldTurn: break;
+    }
+    return PromptAnswer::None;
 }
 
 void Ui::drawMessage(Frame& f) { gfx::text(f, (gfx::W - gfx::textW(message_)) >> 1, 12, message_); }

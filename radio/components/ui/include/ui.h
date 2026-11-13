@@ -52,15 +52,23 @@ struct Status {
     bool netSaved = true;    // a WiFi network is configured
 };
 
-// The download mode's screen (a boot of its own, see guide/download): the step, and the bytes while downloading.
+// The download mode's screen (a boot of its own, see components/download): the step, the bytes while downloading, and
+// the firmware's install prompt.
 struct Download {
-    enum class Step : uint8_t { Join, Check, Get };
+    enum class Step : uint8_t { Join, Check, Get, Prompt };
     Step step = Step::Join;
+    bool firmware = false;     // Updating firmware, else Updating guide
     const char* ssid = "";
+    const char* version = "";  // the version the prompt offers
     uint32_t done = 0;
     uint32_t total = 0;
 };
 void drawDownload(gfx::Frame& f, int lang, const Download& d);
+// The install prompt's answer to an input: a press installs; a long press or the side button (short or held)
+// cancels; anything else is no answer. 30 s without a press cancels as well.
+enum class PromptAnswer : uint8_t { None, Install, Cancel };
+PromptAnswer promptAnswer(EventType e);
+constexpr uint32_t kPromptMs = 30000;
 
 struct Output {
     static constexpr int kMax = 8;
@@ -73,7 +81,7 @@ struct Output {
 
 enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station, Lamp };
 enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Language, Time,
-                              Guide, GuideSettings };
+                              Guide, GuideSettings, FirmwareSettings };
 enum class AdjustId : uint8_t { Volume, Contrast };
 enum class InfoId : uint8_t { Wifi, About, GuideEntry };
 
@@ -81,7 +89,6 @@ constexpr uint32_t kSplashMs = 2600;
 constexpr uint32_t kMenuTimeoutMs = 8000;
 constexpr uint32_t kConfirmTimeoutMs = 30000;
 constexpr uint32_t kToastMs = 1500;
-constexpr uint32_t kResultMs = 3000;    // a download result on home
 constexpr uint32_t kNameTurnMs = 3000;  // on-air names on home take turns
 constexpr int kPasswordMax = 64;
 
@@ -105,8 +112,9 @@ public:
     void render(gfx::Frame& f, uint32_t now, const radio::State& s, const Status& st);
 
     void toast(const char* text, uint32_t now, uint32_t ms = kToastMs);
-    // A guide download's result, shown once on home for 3 s; during the splash it waits for the splash to end.
-    void result(const char* text, uint32_t now);
+    // A download's result, shown in home's top row until the next input; during the splash it waits for the splash
+    // to end.
+    void result(const char* text);
     // A firmware image is waiting: ask for a knob press.
     void confirmInstall(uint32_t now);
     // A fixed full-screen message that ignores input (battery empty).
@@ -132,7 +140,8 @@ public:
     };
 
 private:
-    void endSplash(Output& out, uint32_t now);
+    void endSplash(Output& out);
+    void showResult(const char* text);
     void goHome();
     void popTo();
     void openList(ListId id, bool push, const radio::State& s, const Status& st);
@@ -173,6 +182,7 @@ private:
     char toast_[96] = {};
     char result_[96] = {};
     uint32_t toastUntil_ = 0;
+    bool resultShown_ = false;  // toast_ holds a download result, shown until the next input
     uint32_t volUntil_ = 0;
     char entrySsid_[33] = {};
     bool entryServer_ = false;  // text entry for the NTP server, else a WiFi password
@@ -193,7 +203,7 @@ private:
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
                                Bandwidth, Seek, Join, Language, Station, ToggleTimeSync, Server, Lamp, GuideEntry,
-                               GuideUpdate };
+                               GuideUpdate, FirmwareUpdate };
     struct Item {
         char t[48];
         char mid[14];

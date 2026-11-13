@@ -85,15 +85,28 @@ TEST(goldens) {
                 const std::pair<const char*, i18n::Str> results[] = {
                     {"updated", i18n::Str::guide_updated}, {"uptodate", i18n::Str::up_to_date},
                     {"nonet", i18n::Str::no_network}, {"failed", i18n::Str::download_failed},
-                    {"checkfailed", i18n::Str::guide_check_failed}};
+                    {"checkfailed", i18n::Str::guide_check_failed}, {"fwupdated", i18n::Str::firmware_updated},
+                    {"imagecheckfailed", i18n::Str::image_check_failed}, {"cancelled", i18n::Str::toast_cancelled}};
                 sim->downloading = false;
                 for (const auto& r : results)
-                    if (w[2] == r.first) sim->ui.result(i18n::tr(sim->s.lang, r.second), Sim::kBoot + now);
+                    if (w[2] == r.first) sim->ui.result(i18n::tr(sim->s.lang, r.second));
             } else {
                 sim->downloading = true;
-                sim->dl.step = w[1] == "join" ? ui::Download::Step::Join
-                               : w[1] == "check" ? ui::Download::Step::Check : ui::Download::Step::Get;
+                sim->dl = ui::Download();
+                if (w[1] == "fw") {
+                    sim->dl.firmware = true;
+                    w.erase(w.begin() + 1);
+                }
+                sim->dl.step = w[1] == "join"     ? ui::Download::Step::Join
+                               : w[1] == "check"  ? ui::Download::Step::Check
+                               : w[1] == "prompt" ? ui::Download::Step::Prompt
+                                                  : ui::Download::Step::Get;
                 sim->dl.ssid = sim->ssid;
+                if (sim->dl.step == ui::Download::Step::Prompt) {
+                    sim->dlVersion = w[2];
+                    sim->dl.version = sim->dlVersion.c_str();
+                    sim->promptAt = now;
+                }
                 sim->dl.done = w.size() > 3 ? std::stoul(w[2]) : 0;
                 sim->dl.total = w.size() > 3 ? std::stoul(w[3]) : 0;
             }

@@ -5,7 +5,6 @@
 #include <cstdint>
 
 #include "guide_core.h"
-#include "guide_fetch.h"
 #include "guide_slots.h"
 
 namespace guide {

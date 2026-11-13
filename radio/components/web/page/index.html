@@ -44,6 +44,7 @@ td.a button { padding: 2px 7px; }
 .bars { font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
 #status { color: var(--muted); font: 400 0.85rem system-ui, -apple-system, "Segoe UI", sans-serif; margin-left: 6px; }
 #otaMsg { color: var(--muted); }
+#fwMsg { color: var(--muted); margin: 8px 0 4px; }
 #timeMsg { color: var(--muted); margin: 6px 0 0; }
 #timeMsg:empty { display: none; }
 .rds { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 10px; display: grid; gap: 4px; }
@@ -148,12 +149,16 @@ td.a button { padding: 2px 7px; }
 
   <section>
     <h2 data-t="web_firmware"></h2>
+    <div class="meta"><span id="version"></span><span id="battery"></span></div>
+    <div class="row">
+      <button id="fwCheck" type="button" class="primary" data-t="web_check_update"></button>
+    </div>
+    <p id="fwMsg"></p>
     <div class="row">
       <input id="fw" type="file" accept=".bin">
       <button id="upload" type="button" data-t="web_upload"></button>
     </div>
     <p id="otaMsg"></p>
-    <div class="meta"><span id="version"></span><span id="battery"></span></div>
   </section>
   </div>
 
@@ -362,6 +367,22 @@ async function sendGuide(bytes, sha, io, t) {
   io.status(r.ok ? t('guide_updated') : `${t('web_failed')}: ${r.text}`);
   return r.ok ? 'updated' : 'failed';
 }
+// The Firmware card's line for GET /api/firmware: what Check for update does and, after a firmware check since the
+// radio's power-up, its result with the running version.
+const FW_RESULTS = { 'updated': 'firmware_updated', 'up to date': 'up_to_date', 'no network': 'no_network',
+  'download failed': 'download_failed', 'check failed': 'image_check_failed', 'cancelled': 'toast_cancelled' };
+function firmwareText(f, t) {
+  const u = f && f.last_update;
+  if (!u || u.kind !== 'firmware' || !FW_RESULTS[u.result]) return t('web_check_note');
+  return `${t('web_check_note')} ${fmt(t('web_last_check'), t(FW_RESULTS[u.result]))} (${f.version}).`;
+}
+// Check for update: `post()` sends POST /api/firmware/update and resolves to the response. Returns the card's message:
+// the radio restarts to check (202), it has no network configured (409), or the request failed.
+async function checkFirmware(post, t) {
+  let r;
+  try { r = await post(); } catch (e) { return t('web_offline'); }
+  return r.status === 202 ? t('web_checking') : r.status === 409 ? t('no_network') : t('web_failed');
+}
 // The Time card's controls: the switch posts {sync}, Save posts the server typed, Default an empty server (the
 // radio's default). `post(url, body)` sends it.
 function bindTime(el, post) {
@@ -373,12 +394,13 @@ function bindTime(el, post) {
 // The live state from /api/events. An EventSource reconnects by itself after a dropped connection but closes for
 // good on an error answer, such as 503 when the radio's streams are all taken; a new one then opens 5 s later.
 const EVENTS_RETRY_MS = 5000;
-function openEvents(onState, onOffline) {
+function openEvents(onState, onOffline, onOpen) {
   const es = new EventSource('/api/events');
+  if (onOpen) es.onopen = onOpen;
   es.addEventListener('state', e => onState(JSON.parse(e.data)));
   es.onerror = () => {
     onOffline();
-    if (es.readyState === EventSource.CLOSED) setTimeout(() => openEvents(onState, onOffline), EVENTS_RETRY_MS);
+    if (es.readyState === EventSource.CLOSED) setTimeout(() => openEvents(onState, onOffline, onOpen), EVENTS_RETRY_MS);
   };
   return es;
 }
@@ -397,6 +419,7 @@ async function loadStrings() {
   document.querySelectorAll('[data-ph]').forEach(e => { e.placeholder = t(e.dataset.ph); });
   document.documentElement.lang = lang || 'en';
   $('guideInfo').textContent = guideInfoText(guideInfo, t);
+  $('fwMsg').textContent = firmwareText(fwInfo, t);
   if (st) render(st);
 }
 
@@ -530,6 +553,17 @@ $('upload').onclick = async () => {
   } catch (e) { $('otaMsg').textContent = t('web_failed'); }
 };
 
+// The Firmware card: Check for update restarts the radio into its download mode; the event stream reconnects once the
+// radio is back, and the card then shows the result.
+let fwInfo = null;
+async function loadFirmware() {
+  try { fwInfo = await (await fetch('/api/firmware')).json(); } catch (e) { fwInfo = null; }
+  $('fwMsg').textContent = firmwareText(fwInfo, t);
+}
+$('fwCheck').onclick = async () => {
+  $('fwMsg').textContent = await checkFirmware(() => fetch('/api/firmware/update', { method: 'POST' }), t);
+};
+
 // The Settings > Guide card.
 let guideInfo = null;
 async function loadGuide() {
@@ -562,7 +596,8 @@ $('guideFile').onchange = async () => {
 async function start() {
   render(await (await fetch('/api/state')).json());
   loadGuide();
-  openEvents(s => { render(s); $('status').textContent = ''; }, () => { $('status').textContent = t('web_offline'); });
+  openEvents(s => { render(s); $('status').textContent = ''; }, () => { $('status').textContent = t('web_offline'); },
+    loadFirmware);
 }
 start();
 </script>

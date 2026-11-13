@@ -8,6 +8,7 @@
 #include <initializer_list>
 
 #include "cJSON.h"
+#include "download.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -499,16 +500,21 @@ void sseTask(void*) {
 // Uploads (guide tables and firmware) arrive in pieces of this size, into a buffer that lives for the request.
 constexpr size_t kRecvBuf = 1024;
 
+// `,"last_update":{...}` for the last download since power-up, of either kind, or nothing before one.
+void lastUpdate(char* out, size_t n) {
+    out[0] = 0;
+    download::LastUpdate u;
+    if (!download::lastUpdate(u)) return;
+    out[0] = ',';
+    download::lastUpdateJson(u, out + 1, n - 1);
+}
+
 // {"season", "entries", "length", "sha256", "source_modified"} for the loaded table, or {"entries": 0}.
 esp_err_t sendGuide(httpd_req_t* req) {
     const guide::Info i = guide::info();
-    char buf[384], last[128] = "";
+    char buf[384], last[160];
     Json j(buf, sizeof buf);
-    guide::LastUpdate u;
-    if (store::lastUpdate(u)) {
-        last[0] = ',';
-        guide::lastUpdateJson(u, last + 1, sizeof last - 1);
-    }
+    lastUpdate(last, sizeof last);
     if (!i.valid) {
         j.raw("{\"entries\":0%s}", last);
     } else {
@@ -529,20 +535,24 @@ esp_err_t sendGuide(httpd_req_t* req) {
 
 esp_err_t getGuide(httpd_req_t* req) { return sendGuide(req); }
 
-volatile bool s_guideRestart = false;
+volatile bool s_restart = false;
 
-// The same request as Update guide on the radio; the UI loop restarts once the answer is sent.
-esp_err_t postGuideUpdate(httpd_req_t* req) {
+// A download request: 409 without a configured network, else stored, 202, and the UI loop restarts once the answer
+// is sent.
+esp_err_t requestDownload(httpd_req_t* req, download::Request r) {
     net::Info ni;
     net::info(ni);
     char body[48];
-    const int status = store::requestGuideUpdate(ni.saved, body, sizeof body);
+    const int status = download::requestUpdate(r, ni.saved, body, sizeof body);
     httpd_resp_set_status(req, status == 202 ? "202 Accepted" : "409 Conflict");
     httpd_resp_set_type(req, "application/json");
-    const esp_err_t r = httpd_resp_send(req, body, std::strlen(body));
-    if (status == 202) s_guideRestart = true;
-    return r;
+    const esp_err_t e = httpd_resp_send(req, body, std::strlen(body));
+    if (status == 202) s_restart = true;
+    return e;
 }
+
+// The same request as Update guide on the radio.
+esp_err_t postGuideUpdate(httpd_req_t* req) { return requestDownload(req, download::Request::Guide); }
 
 esp_err_t guideFail(httpd_req_t* req, const char* why) {
     httpd_resp_set_status(req, "400 Bad Request");
@@ -611,7 +621,25 @@ esp_err_t getScreen(httpd_req_t* req) {
     return httpd_resp_send(req, s_json, kHeadLen + gfx::kBytes);
 }
 
-// ---- firmware upload ----
+// ---- firmware ----
+
+// {"version", "slot", "last_update"}: the running version and app slot, and the last download since power-up.
+esp_err_t getFirmware(httpd_req_t* req) {
+    const esp_partition_t* running = esp_ota_get_running_partition();
+    char buf[256], last[160];
+    lastUpdate(last, sizeof last);
+    Json j(buf, sizeof buf);
+    j.raw("{\"version\":");
+    j.str(s_version);
+    j.raw(",\"slot\":");
+    j.str(running ? running->label : "");
+    j.raw("%s}", last);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, j.c_str(), j.size());
+}
+
+// The same request as Update in Settings > Firmware, without the install prompt.
+esp_err_t postFirmwareUpdate(httpd_req_t* req) { return requestDownload(req, download::Request::FirmwareApi); }
 
 SemaphoreHandle_t s_decided;
 volatile bool s_confirmReq = false;
@@ -669,9 +697,9 @@ void handle(const char* uri, httpd_method_t method, esp_err_t (*fn)(httpd_req_t*
 
 }  // namespace
 
-bool takeGuideRestart() {
-    if (!s_guideRestart) return false;
-    s_guideRestart = false;
+bool takeRestart() {
+    if (!s_restart) return false;
+    s_restart = false;
     return true;
 }
 
@@ -692,7 +720,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 22;
+    cfg.max_uri_handlers = 24;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -716,6 +744,8 @@ void start(const char* version) {
     handle("/api/guide", HTTP_GET, getGuide);
     handle("/api/guide", HTTP_POST, postGuide);
     handle("/api/guide/update", HTTP_POST, postGuideUpdate);
+    handle("/api/firmware", HTTP_GET, getFirmware);
+    handle("/api/firmware/update", HTTP_POST, postFirmwareUpdate);
     handle("/api/screen", HTTP_GET, getScreen);
     xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }

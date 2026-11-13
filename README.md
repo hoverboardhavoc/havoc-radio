@@ -23,14 +23,15 @@ language list](docs/images/screens.png)
   and flashes SOS in Morse code.
 - The interface comes in 41 languages, each listed under its own name.
 - A web page on the local network shows the frequency and signal live, tunes the radio, edits presets, sets up
-  WiFi and uploads firmware. A new firmware only installs after a press of the knob on the radio.
+  WiFi and uploads firmware. An uploaded firmware only installs after a press of the knob on the radio.
+- The radio updates itself to the latest release on request, from Settings > Firmware or from the web page.
 - In AM, LSB and USB it shows the name of the station on air on the home screen, and the frequency's schedule on a
   Station screen, from a frequency guide converted from the [EiBi](http://www.eibispace.de/) shortwave schedule.
   The guide updates on request, from the radio's Settings or from the web page; the
   [eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) repository keeps it current.
 - The radio sets its clock in UTC from NTP while it is on a network and shows the time on the home screen. Settings
-  turns NTP off. Its only other outside connection is the guide download, when one is asked for. Without a home
-  network it runs its own access point `Havoc-Radio`.
+  turns NTP off. Its only other outside connections are the guide and firmware downloads, when one is asked for.
+  Without a home network it runs its own access point `Havoc-Radio`.
 - Havoc Radio installs over WiFi on a radio with the stock firmware, through the radio's own update menu, with no
   soldering: [docs/installer.md](docs/installer.md).
 
