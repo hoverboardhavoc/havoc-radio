@@ -1,7 +1,7 @@
 // The radio web page's functions under Node, from the page's <script id="lib">, with the English strings from the
 // prototype's table: the RDS rendering on a state as GET /api/state sends it (radio/test/rds/state-99.5.json, the
 // fields decoded from the 99.5 MHz bench capture), the Radio and Settings views by the location hash, the header
-// clock, the Time card and its controls posting /api/time.
+// clock, the Time card and its controls posting /api/time, and the event stream's reopening.
 //
 //   node test_page.js ROOT
 "use strict";
@@ -16,7 +16,7 @@ const page = fs.readFileSync(path.join(root, "radio/components/web/page/index.ht
 const lib = page.match(/<script id="lib">([\s\S]*?)<\/script>/);
 assert(lib, 'no <script id="lib"> in the page');
 const ctx = vm.createContext({});
-vm.runInContext(lib[1] + "\n;Object.assign(globalThis, { rdsHtml, showView, clockHtml, timeHtml, ageText, bindTime });", ctx);
+vm.runInContext(lib[1] + "\n;Object.assign(globalThis, { rdsHtml, showView, clockHtml, timeHtml, ageText, bindTime, openEvents });", ctx);
 // The page's other script must at least compile.
 for (const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
 
@@ -99,4 +99,37 @@ eq(JSON.stringify(posts), JSON.stringify([
   ["/api/time", '{"server":"ntp.example.net"}'],
   ["/api/time", '{"server":""}'],
 ]), "switch, Save, Enter and Default post /api/time");
+// The event stream: a dropped connection the EventSource retries itself shows offline and opens nothing new; one it
+// closed for good (an error answer, such as 503 with every stream taken) is opened again 5 s later.
+{
+  const sources = [], timers = [], states = [];
+  let offline = 0;
+  class FakeEventSource {
+    constructor(url) { this.url = url; this.readyState = FakeEventSource.CONNECTING; this.on = {}; sources.push(this); }
+    addEventListener(type, fn) { this.on[type] = fn; }
+  }
+  Object.assign(FakeEventSource, { CONNECTING: 0, OPEN: 1, CLOSED: 2 });
+  ctx.EventSource = FakeEventSource;
+  ctx.setTimeout = (fn, ms) => timers.push([fn, ms]);
+  ctx.openEvents(s => states.push(s.hz), () => offline++);
+  eq(sources.length + "|" + sources[0].url, "1|/api/events", "one stream opened");
+  sources[0].on.state({ data: '{"hz":99500000}' });
+  eq(states.join(), "99500000", "a state event rendered");
+  sources[0].readyState = FakeEventSource.CONNECTING;
+  sources[0].onerror();
+  eq(offline + "|" + timers.length + "|" + sources.length, "1|0|1", "a dropped connection: offline, the EventSource retries");
+  sources[0].readyState = FakeEventSource.CLOSED;
+  sources[0].onerror();
+  eq(offline + "|" + timers.length + "|" + timers[0][1], "2|1|5000", "closed for good: offline, a new one in 5 s");
+  eq(sources.length, 1, "nothing opened before the 5 s");
+  timers.shift()[0]();
+  eq(sources.length + "|" + sources[1].url, "2|/api/events", "a new stream after 5 s");
+  sources[1].on.state({ data: '{"hz":6070000}' });
+  eq(states.join(), "99500000,6070000", "the new stream's state rendered");
+  sources[1].readyState = FakeEventSource.CLOSED;
+  sources[1].onerror();
+  timers.shift()[0]();
+  eq(sources.length, 3, "and again after the next refusal");
+}
+
 console.log(`page: ${checks} checks, 0 failures`);

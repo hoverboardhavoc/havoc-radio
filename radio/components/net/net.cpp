@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <new>
 
 #include "clock_core.h"
 #include "esp_event.h"
@@ -33,6 +34,10 @@ TimerHandle_t s_retryTimer;  // periodic rejoin while the access point is up
 clk::SntpRule s_sntp;  // the UI loop's view of the client
 // The client's server name. lwIP keeps the pointer, so it lives here, written only in the TCP/IP task.
 char s_sntpServer[clk::SntpRule::kServerMax + 1];
+
+// A change for the client that lwIP has not taken yet: the latest one stands for all before it, since the job
+// stops the client and starts it again unless the change is a stop.
+clk::Sntp s_sntpPending = clk::Sntp::None;
 
 struct SntpJob {
     clk::Sntp action;
@@ -215,13 +220,17 @@ void timeSync(bool on, const char* server) {
         hasIp = joined && s_info.ip[0];
     }
     const clk::Sntp action = s_sntp.update(on, joined, ap, hasIp, server);
-    if (action == clk::Sntp::None) return;
-    auto* job = new SntpJob{action, {}};
+    if (action != clk::Sntp::None) s_sntpPending = action;
+    if (s_sntpPending == clk::Sntp::None) return;
+    // The UI loop never waits on lwIP: with its mailbox full or no memory, the change waits for the next pass.
+    auto* job = new (std::nothrow) SntpJob{s_sntpPending, {}};
+    if (!job) return;
     std::strcpy(job->server, s_sntp.server());
-    if (tcpip_callback(sntpJob, job) != ERR_OK) {
-        ESP_LOGE(TAG, "sntp job not queued");
+    if (tcpip_try_callback(sntpJob, job) != ERR_OK) {
         delete job;
+        return;
     }
+    s_sntpPending = clk::Sntp::None;
 }
 
 }  // namespace net
