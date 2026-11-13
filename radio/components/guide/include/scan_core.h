@@ -8,6 +8,8 @@
 
 namespace scan {
 
+// TODO: keep every result instead of the 40 strongest (a Scan all measures up to about 1,900 frequencies), and an
+// optional filter that hides results with an SNR of 0 dB, on the radio's results list and the web page's Scan card.
 constexpr int kMax = 40;            // results kept
 constexpr uint32_t kSettleMs = 60;  // from the tune to the signal reading
 
