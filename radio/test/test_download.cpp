@@ -16,7 +16,7 @@ using guide::Result;
 
 namespace {
 
-std::string table(const char* name) { return readFile(t::root() + "/radio/build/host/guide/" + name); }
+std::string table(const char* name) { return readFile(t::root() + "/radio/test/guide/" + name); }
 
 std::string hex(const uint8_t* p, int n) {
     std::string s;

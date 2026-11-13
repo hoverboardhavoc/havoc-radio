@@ -10,8 +10,8 @@
 namespace guide {
 
 constexpr const char* kHost = "raw.githubusercontent.com";
-constexpr const char* kManifestPath = "/hoverboardhavoc/havoc-radio-guide/main/v1/manifest.json";
-constexpr const char* kTablePath = "/hoverboardhavoc/havoc-radio-guide/main/v1/stations.bin";
+constexpr const char* kManifestPath = "/hoverboardhavoc/eibi-binary-table/main/v1/manifest.json";
+constexpr const char* kTablePath = "/hoverboardhavoc/eibi-binary-table/main/v1/stations.bin";
 constexpr uint32_t kManifestMax = 2048;
 
 // One HTTPS GET at a time: open() connects and sends the request; read() returns bytes of the response (status line

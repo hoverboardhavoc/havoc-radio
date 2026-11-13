@@ -27,7 +27,7 @@ language list](docs/images/screens.png)
 - In AM, LSB and USB it shows the name of the station on air on the home screen, and the frequency's schedule on a
   Station screen, from a frequency guide converted from the [EiBi](http://www.eibispace.de/) shortwave schedule.
   The guide updates on request, from the radio's Settings or from the web page; the
-  [havoc-radio-guide](https://github.com/hoverboardhavoc/havoc-radio-guide) repository keeps it current.
+  [eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) repository keeps it current.
 - The radio sets its clock in UTC from NTP while it is on a network and shows the time on the home screen. Settings
   turns NTP off. Its only other outside connection is the guide download, when one is asked for. Without a home
   network it runs its own access point `Havoc-Radio`.
@@ -42,7 +42,8 @@ language list](docs/images/screens.png)
   adapter; updates.
 - [docs/hardware.md](docs/hardware.md): the radio, where to buy it, its parts, pins and flash layout.
 - [docs/translations.md](docs/translations.md): how the translations are kept and checked.
-- [docs/guide-format.md](docs/guide-format.md): the frequency guide's table format.
+- [FORMAT.md](https://github.com/hoverboardhavoc/eibi-binary-table/blob/main/FORMAT.md) in eibi-binary-table: the
+  frequency guide's table format.
 - [docs/build-radio.md](docs/build-radio.md) and [docs/build-installer.md](docs/build-installer.md): building and
   testing the firmware and the installer.
 - [radio/ui/prototype.html](radio/ui/prototype.html): the UI reference. Open it in a browser to try every screen;

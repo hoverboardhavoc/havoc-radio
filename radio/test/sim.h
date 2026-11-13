@@ -21,9 +21,8 @@ struct Sim {
     std::string ps, rt;
     clk::Core clock;  // monotonic time: the scenario time plus kBoot, as the prototype's clock
     gfx::Frame frame;
-    // The prototype's sample guide, converted by radio/test/test_guide_table.py, and the lookup for the tuned
-    // frequency.
-    std::string table = readFile(t::root() + "/radio/build/host/guide/sample.bin");
+    // The prototype's sample guide (radio/test/guide/sample.bin) and the lookup for the tuned frequency.
+    std::string table = readFile(t::root() + "/radio/test/guide/sample.bin");
     guide::Info info;
     guide::Hits hits;
     bool guideOn = true;

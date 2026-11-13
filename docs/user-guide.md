@@ -510,7 +510,7 @@ The clock uses the new server from its next sync.
 
 The frequency guide is EiBi's schedule for the season: `A26` from the last Sunday of March 2026, `B26` from the last
 Sunday of October. EiBi revises it during the season. The data repository
-[havoc-radio-guide](https://github.com/hoverboardhavoc/havoc-radio-guide) keeps a converted copy current; the K-Radio
+[eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) keeps a converted copy current; the K-Radio
 or its web page downloads it from there on request. Nothing downloads on its own: there is no check at start-up and
 no timer.
 

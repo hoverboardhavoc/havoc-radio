@@ -1,7 +1,7 @@
-// The frequency guide table (docs/guide-format.md): its checks, the lookup for a frequency and the on-air rule.
-// Pure: it reads the table through a Source, so the host tests run it on tables made by the converter. Every byte
-// of a table is untrusted: check() runs on the whole table before any lookup uses it, and lookups index only within
-// the bounds it checked.
+// The frequency guide table (format 1, FORMAT.md in hoverboardhavoc/eibi-binary-table): its checks, the lookup
+// for a frequency and the on-air rule. Pure: it reads the table through a Source, so the host tests run it on
+// tables made by the data repository's converter (radio/test/guide/). Every byte of a table is untrusted: check()
+// runs on the whole table before any lookup uses it, and lookups index only within the bounds it checked.
 #pragma once
 #include <cstddef>
 #include <cstdint>

@@ -138,7 +138,7 @@ eq(ctx.guideInfoText({ entries: 0 }, t), "No guide", "Settings > Guide without a
 
 // SHA-256 against Node's own, on the converter's table.
 const crypto = require("crypto");
-const tableBytes = new Uint8Array(fs.readFileSync(path.join(root, "radio/build/host/guide/b26.bin")));
+const tableBytes = new Uint8Array(fs.readFileSync(path.join(root, "radio/test/guide/b26.bin")));
 const tableSha = crypto.createHash("sha256").update(tableBytes).digest("hex");
 eq(ctx.sha256(tableBytes), tableSha, "SHA-256 of the B26 table");
 eq(ctx.sha256(new Uint8Array(0)), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", "SHA-256 of nothing");

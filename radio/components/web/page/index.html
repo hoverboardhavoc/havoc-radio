@@ -210,7 +210,7 @@ function timeHtml(time, utcMs, now, zone, t) {
   return `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
 }
 // ---- the frequency guide ----
-const GUIDE_BASE = 'https://raw.githubusercontent.com/hoverboardhavoc/havoc-radio-guide/main/v1/';
+const GUIDE_BASE = 'https://raw.githubusercontent.com/hoverboardhavoc/eibi-binary-table/main/v1/';
 const DAY_NAMES = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 // EiBi's form of the day bits (bit 0 Monday): ranges of three or more days, single days joined with commas.
 function daysText(days) {

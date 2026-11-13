@@ -1,5 +1,4 @@
-// The guide reader on tables made by the converter (radio/test/test_guide_table.py writes them to
-// radio/build/host/guide/): the checks, damaged and hostile tables, lookup within 1 kHz, the on-air rule at window
+// The guide reader on tables made by the data repository's converter (radio/test/guide/): the checks, damaged and hostile tables, lookup within 1 kHz, the on-air rule at window
 // edges and across midnight with the start day, irregular entries, the ordering, and the two slots.
 #include <algorithm>
 #include <cstring>
@@ -18,7 +17,7 @@ namespace {
 constexpr int64_t kTue = 1794268800000LL;  // 2026-11-10 00:00 UTC, a Tuesday
 constexpr int64_t kMin = 60000, kHour = 3600000, kDay = 86400000;
 
-std::string table(const char* name) { return readFile(t::root() + "/radio/build/host/guide/" + name); }
+std::string table(const char* name) { return readFile(t::root() + "/radio/test/guide/" + name); }
 
 uint32_t u32(const std::string& t, size_t off) {
     uint32_t v;

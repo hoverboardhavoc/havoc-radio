@@ -30,18 +30,17 @@ The build fetches the Si4732 SSB patch from the PU2CLR SI4735 library on GitHub 
 is not part of this repository. Without network access the firmware still builds, without LSB and USB.
 
 The build also fetches the current frequency guide table, `v1/stations.bin`, from the data repository
-[havoc-radio-guide](https://github.com/hoverboardhavoc/havoc-radio-guide) into `radio/build/guide/`, checks it with
-`radio/tools/guide_table.py --verify` and flashes it at the guide partition (`0x10000`) with the app, so a UART
-install and the install image carry a starting guide. When the fetch or the check fails the build prints a warning and
-continues; the radio then starts with no guide. `radio/tools/guide_table.py` converts an EiBi CSV into a table
-([guide-format.md](guide-format.md)).
+[eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) into `radio/build/guide/`, checks its
+length and SHA-256 against `v1/manifest.json` and its magic and format, and flashes it at the guide partition
+(`0x10000`) with the app, so a UART install and the install image carry a starting guide. The radio runs the
+format's full checks before it uses a table. When the fetch or the check fails the build prints a warning and
+continues; the radio then starts with no guide. The format and its converter belong to the data repository
+([FORMAT.md](https://github.com/hoverboardhavoc/eibi-binary-table/blob/main/FORMAT.md)).
 
 ## Tests
 
 `make test` builds and runs the host tests in `radio/test/`:
 
-- the frequency guide converter on EiBi's B26 and A26 CSVs (`radio/test/eibi/`, kept byte for byte), built rows
-  and damaged tables (`radio/test/test_guide_table.py`);
 - the font tables against the prototype;
 - 244 framebuffer goldens;
 - the navigation and text entry rules;
@@ -49,8 +48,8 @@ continues; the radio then starts with no guide. `radio/tools/guide_table.py` con
 - the encoder decoder and the button timing;
 - the fit of every string in every language on every screen;
 - the receiver driver's opcode guard;
-- the guide reader on converter tables and hostile ones, the on-air rule, the two slots, and the download mode with
-  a fake transport;
+- the guide reader on the data repository's tables (`radio/test/guide/`) and hostile ones, the on-air rule, the
+  two slots, and the download mode with a fake transport;
 - the web page's functions under Node, the guide update against a fake manifest and table among them.
 
 `STOCK_IMAGE=<path>` adds tests against a 4 MB flash backup of a K-Radio on the stock firmware.
