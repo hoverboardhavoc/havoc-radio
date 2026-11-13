@@ -17,6 +17,7 @@
 #include "freertos/task.h"
 #include "freertos/timers.h"
 #include "guide.h"
+#include "i18n_json.h"
 #include "i18n_strings.h"
 #include "lwip/sockets.h"
 #include "net.h"
@@ -250,12 +251,16 @@ esp_err_t getPage(httpd_req_t* req) {
 
 esp_err_t getState(httpd_req_t* req) { return sendState(req, true); }
 
+bool sendChunk(void* req, const char* data, size_t len) {
+    return httpd_resp_send_chunk(static_cast<httpd_req_t*>(req), data, len) == ESP_OK;
+}
+
 esp_err_t getStrings(httpd_req_t* req) {
     radio::State s;
     radio::snapshot(s);
     httpd_resp_set_type(req, "application/json; charset=utf-8");
-    const char* json = i18n::kJson[s.lang < i18n::kLangCount ? s.lang : 0];
-    return httpd_resp_send(req, json, std::strlen(json));
+    if (!i18n::writeJson(s.lang, sendChunk, req)) return ESP_FAIL;
+    return httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 // One handler for the simple setters; the URI picks the field.

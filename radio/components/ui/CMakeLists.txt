@@ -13,7 +13,7 @@ if(NOT CMAKE_BUILD_EARLY_EXPANSION)
                  "${CMAKE_CURRENT_LIST_DIR}/../../tools/gen_strings.py")
 endif()
 
-idf_component_register(SRCS "ui.cpp" "${gendir}/i18n_strings.cpp"
+idf_component_register(SRCS "ui.cpp" "i18n_json.cpp" "${gendir}/i18n_strings.cpp"
                        INCLUDE_DIRS "include"
                        REQUIRES gfx radio clock guide)
 target_include_directories(${COMPONENT_LIB} PUBLIC "${gendir}")

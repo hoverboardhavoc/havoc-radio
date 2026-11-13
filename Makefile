@@ -48,7 +48,8 @@ CXXFLAGS := -std=c++17 -O1 -g -Wall -Wextra -Werror -ffp-contract=off -DSRC_ROOT
 	-I$(RADIO)/components/web/include \
 	-I$(GEN) -I$(RADIO)/test
 
-LIB_SRC := $(RADIO)/components/gfx/gfx.cpp $(RADIO)/components/ui/ui.cpp $(RADIO)/components/radio/radio_model.cpp \
+LIB_SRC := $(RADIO)/components/gfx/gfx.cpp $(RADIO)/components/ui/ui.cpp $(RADIO)/components/ui/i18n_json.cpp \
+	$(RADIO)/components/radio/radio_model.cpp \
 	$(RADIO)/components/input/input_logic.cpp $(RADIO)/components/rds/rds.cpp \
 	$(RADIO)/components/clock/clock_core.cpp $(RADIO)/components/lamp/lamp_core.cpp \
 	$(RADIO)/components/guide/guide_core.cpp $(RADIO)/components/guide/guide_slots.cpp \
@@ -59,7 +60,7 @@ OBJ := $(patsubst %.cpp,$(HOST)/obj/%.o,$(LIB_SRC) $(TEST_SRC)) $(GEN_SRC:.cpp=.
 
 .PHONY: test installer-test goldens check-goldens pngs setup firmware install-image installer clean
 
-test: $(HOST)/tests install-image
+test: $(HOST)/tests $(GEN)/i18n_strings.jsonl install-image
 	$(HOST)/tests
 	$(NODE) $(RADIO)/test/test_page.js $(ROOT)
 	$(PY) $(RADIO)/test/test_install_image.py
@@ -93,7 +94,7 @@ $(GEN)/fonts_data.cpp: $(RADIO)/ui/prototype.html $(RADIO)/tools/gen_fonts.py
 	@mkdir -p $(GEN)
 	$(PY) $(RADIO)/tools/gen_fonts.py $< $@
 
-$(GEN)/i18n_strings.cpp $(GEN)/i18n_strings.h: $(RADIO)/ui/prototype.html $(RADIO)/tools/gen_strings.py
+$(GEN)/i18n_strings.cpp $(GEN)/i18n_strings.h $(GEN)/i18n_strings.jsonl: $(RADIO)/ui/prototype.html $(RADIO)/tools/gen_strings.py
 	@mkdir -p $(GEN)
 	$(PY) $(RADIO)/tools/gen_strings.py $< $(GEN)
 

@@ -62,7 +62,7 @@ struct Checker {
 TEST(strings_have_glyphs) {
     for (int l = 0; l < i18n::kLangCount; l++) {
         for (int k = 0; k < i18n::kStrCount; k++) {
-            const char* p = i18n::kTable[l][k];
+            const char* p = i18n::tr(l, static_cast<Str>(k));
             while (uint32_t cp = gfx::nextCp(p))
                 if (!gfx::pipGlyph(cp))
                     t::fail(__FILE__, __LINE__,
@@ -76,11 +76,11 @@ TEST(strings_have_glyphs) {
 TEST(strings_placeholders_match_english) {
     const std::regex ph("%[ds%]");
     for (int k = 0; k < i18n::kStrCount; k++) {
-        const std::string en = i18n::kTable[0][k];
+        const std::string en = i18n::tr(0, static_cast<Str>(k));
         std::string want;
         for (auto it = std::sregex_iterator(en.begin(), en.end(), ph); it != std::sregex_iterator(); ++it) want += it->str();
         for (int l = 1; l < i18n::kLangCount; l++) {
-            const std::string s = i18n::kTable[l][k];
+            const std::string s = i18n::tr(l, static_cast<Str>(k));
             std::string got;
             for (auto it = std::sregex_iterator(s.begin(), s.end(), ph); it != std::sregex_iterator(); ++it) got += it->str();
             if (got != want) t::fail(__FILE__, __LINE__, std::string(i18n::kLangCode[l]) + "." + i18n::kKey[k]);
