@@ -1,5 +1,6 @@
-// Startup and the UI loop: input events go through the UI, its commands to the radio, network and web
-// modules, and the frame goes to the display when it changes.
+// Startup and the UI loop: input events (the hardware's, then those of input scripts from the web server) go
+// through the UI, its commands to the radio, network and web modules, and the frame goes to the display when it
+// changes.
 #include <cstring>
 
 #include "board.h"
@@ -135,6 +136,7 @@ extern "C" void app_main() {
         const uint32_t now = millis();
         input::EventQueue q;
         input::poll(now, q);
+        input::takeInjected(now, s_app->ui.view(), q);
 
         net::Info ni;
         if (s_netUp) net::info(ni);
@@ -201,6 +203,7 @@ extern "C" void app_main() {
             lastFrame = now;
             s_app->ui.render(s_app->frame, now, s, st);
             show(false);
+            input::drawn();
         }
         // WiFi starts once the splash is over and the first frame after it is on screen: joining holds the CPU
         // at a higher priority than this loop for about a second. The web server needs the network stack that
