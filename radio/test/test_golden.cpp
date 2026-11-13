@@ -89,7 +89,7 @@ TEST(goldens) {
                     {"imagecheckfailed", i18n::Str::image_check_failed}, {"cancelled", i18n::Str::toast_cancelled}};
                 sim->downloading = false;
                 for (const auto& r : results)
-                    if (w[2] == r.first) sim->ui.result(i18n::tr(sim->s.lang, r.second), Sim::kBoot + now);
+                    if (w[2] == r.first) sim->ui.result(i18n::tr(sim->s.lang, r.second));
             } else {
                 sim->downloading = true;
                 sim->dl = ui::Download();

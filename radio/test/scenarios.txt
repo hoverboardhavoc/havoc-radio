@@ -18,7 +18,7 @@
 #        the firmware; DONE and TOTAL in bytes)
 #        dl fw prompt VERSION   (the firmware's install prompt offering VERSION, from that time)
 #        dl result updated|uptodate|nonet|failed|checkfailed|fwupdated|imagecheckfailed|cancelled   (a download
-#        result shown on home for 3 s)
+#        result shown on home until the next input)
 
 scenario splash
 @0 render t0000
@@ -986,7 +986,7 @@ render
 press
 render list
 
-# Download mode: each step, then each result on home for 3 s.
+# Download mode: each step, then each result on home, shown until the next input.
 scenario guide_download
 dl join
 render join
@@ -1003,8 +1003,9 @@ scenario guide_result
 ntp 13:05
 @4000 dl result updated
 @4000 render updated
-@6900 render updated_late
-@7100 render gone
+@60000 render updated_late
+side
+render gone
 dl result uptodate
 render uptodate
 dl result nonet
@@ -1127,7 +1128,7 @@ dl fw prompt 2026.47.0
 @33200 render restart
 @36000 render cancelled
 
-# The results on home for 3 s.
+# The results on home, shown until the next input.
 scenario firmware_result
 ntp 13:05
 @4000 dl result fwupdated

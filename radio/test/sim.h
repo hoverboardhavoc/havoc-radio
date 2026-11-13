@@ -116,7 +116,7 @@ struct Sim {
     void restart(uint32_t t, const char* result) {
         downloading = false;
         ui.begin(kBoot + t);
-        if (result) ui.result(result, kBoot + t);
+        if (result) ui.result(result);
     }
     // A cancel shows Update cancelled for the firmware and nothing for the guide.
     void cancelDownload(uint32_t t) {

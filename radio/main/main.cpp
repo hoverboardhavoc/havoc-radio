@@ -124,7 +124,7 @@ extern "C" void app_main() {
 
     ui::prepareSplash();
     s_app->ui.begin(millis());
-    if (result) s_app->ui.result(result, millis());
+    if (result) s_app->ui.result(result);
     uint32_t lastFrame = 0;
     for (;;) {
         const uint32_t now = millis();

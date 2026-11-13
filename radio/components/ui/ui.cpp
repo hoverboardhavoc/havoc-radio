@@ -288,12 +288,12 @@ void Ui::begin(uint32_t now) {
     depth_ = 0;
 }
 
-void Ui::endSplash(Output& out, uint32_t now) {
+void Ui::endSplash(Output& out) {
     releaseWheel();
     goHome();
     out.push(Cmd::SplashEnd);
     if (result_[0]) {
-        toast(result_, now, kResultMs);
+        showResult(result_);
         result_[0] = 0;
     }
 }
@@ -312,13 +312,19 @@ void Ui::popTo() {
 void Ui::toast(const char* text, uint32_t now, uint32_t ms) {
     copy(toast_, sizeof toast_, text);
     toastUntil_ = now + ms;
+    resultShown_ = false;
 }
 
-void Ui::result(const char* text, uint32_t now) {
+void Ui::showResult(const char* text) {
+    copy(toast_, sizeof toast_, text);
+    resultShown_ = true;
+}
+
+void Ui::result(const char* text) {
     if (view_ == View::Splash)
         copy(result_, sizeof result_, text);
     else
-        toast(text, now, kResultMs);
+        showResult(text);
 }
 
 void Ui::confirmInstall(uint32_t now) {
@@ -644,7 +650,11 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
     // The side button's hold does nothing on the splash, a message or the confirm screen.
     if (e.type == EventType::SideHold && (view_ == View::Splash || view_ == View::Confirm)) return;
     lastInput_ = now;
-    if (view_ == View::Splash) return endSplash(out, now);
+    if (view_ == View::Splash) return endSplash(out);
+    if (resultShown_) {
+        resultShown_ = false;
+        toast_[0] = 0;
+    }
     stopSeek(st, out);
     if (view_ == View::List) build(list_.id, s, st);
     const int d = e.n;
@@ -794,7 +804,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
 }
 
 void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
-    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out, now);
+    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out);
     if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info || view_ == View::Lamp) &&
         now - lastInput_ > kMenuTimeoutMs)
         goHome();
@@ -866,7 +876,7 @@ void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
     char fs[16];
     const char* unit;
     radio::freqText(s, fs, sizeof fs, &unit);
-    const bool vol = now < volUntil_, toasting = toast_[0] && now < toastUntil_;
+    const bool vol = now < volUntil_, toasting = toast_[0] && (resultShown_ || now < toastUntil_);
     const char* band = radio::bandLabel(s.hz, s.mode);
     if (vol) {
         gfx::icon(f, 0, 0, gfx::Icon::Volume);

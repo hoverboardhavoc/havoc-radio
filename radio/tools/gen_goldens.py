@@ -137,9 +137,9 @@ def run(script, scenario):
             else:
                 raise ValueError(f"{name}: unknown rds {key}")
         elif op == "dl":
-            # Download mode at one step (`fw` first for the firmware), or its result on home (3 s).
+            # Download mode at one step (`fw` first for the firmware), or its result on home (until the next input).
             if args[0] == "result":
-                ctx.eval(f"goHome(); toast(T({json.dumps(DL_RESULTS[args[1]])}), 3000)")
+                ctx.eval(f"goHome(); toast(T({json.dumps(DL_RESULTS[args[1]])}), Infinity)")
             else:
                 kind = "guide"
                 if args[0] == "fw":

@@ -138,7 +138,8 @@ while muted, so that the flag fits.
 
 ### Messages in the top row
 
-Short messages replace the top row for 1.5 s, in inverted text.
+Short messages replace the top row for 1.5 s, in inverted text. The result of a guide or firmware download stays
+until the wheel or the side button is next used (see [Guide](#guide) and [Firmware](#firmware)).
 
 ![A message: Saved as preset 6](images/guide/home_preset_save.png)
 
@@ -536,9 +537,10 @@ the kilobytes received. The side button (Back) cancels at any step. The whole mo
 
 ![Download mode: Downloading, a bar, 92/187 KB](images/guide/guide_download_get.png)
 
-The K-Radio then restarts into the normal home screen and shows the result in the top row for 3 s: `Guide updated`,
-`Up to date` (the loaded guide is the current one), `No network` (the network could not be joined), `Download failed`
-or `Guide check failed` (the table did not pass the K-Radio's checks). After a cancel it shows nothing.
+The K-Radio then restarts into the normal home screen and shows the result in the top row until the wheel or the side
+button is next used: `Guide updated`, `Up to date` (the loaded guide is the current one), `No network` (the network
+could not be joined), `Download failed` or `Guide check failed` (the table did not pass the K-Radio's checks). After a
+cancel it shows nothing.
 
 ![After the download: Guide updated](images/guide/guide_result_updated.png)
 
@@ -585,9 +587,9 @@ kilobytes received. The side button cancels during the download as well. The who
 
 The image's length and SHA-256 must match the manifest, and the image must pass the SDK's check of an app image. Only
 then is the new slot selected for the next start. The K-Radio restarts into the new firmware and shows
-`Firmware updated` in the top row for 3 s. `Download failed` means the download failed or did not match the manifest,
-and `Image check failed` that the image is not a valid app. After a failure or a cancel, also after switching off
-during the download, the running firmware stays and starts as before.
+`Firmware updated` in the top row until the wheel or the side button is next used. `Download failed` means the download
+failed or did not match the manifest, and `Image check failed` that the image is not a valid app. After a failure or a
+cancel, also after switching off during the download, the running firmware stays and starts as before.
 
 ![After the update: Firmware updated](images/guide/firmware_result_updated.png)
 

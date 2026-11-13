@@ -89,7 +89,6 @@ constexpr uint32_t kSplashMs = 2600;
 constexpr uint32_t kMenuTimeoutMs = 8000;
 constexpr uint32_t kConfirmTimeoutMs = 30000;
 constexpr uint32_t kToastMs = 1500;
-constexpr uint32_t kResultMs = 3000;    // a download result on home
 constexpr uint32_t kNameTurnMs = 3000;  // on-air names on home take turns
 constexpr int kPasswordMax = 64;
 
@@ -113,8 +112,9 @@ public:
     void render(gfx::Frame& f, uint32_t now, const radio::State& s, const Status& st);
 
     void toast(const char* text, uint32_t now, uint32_t ms = kToastMs);
-    // A guide download's result, shown once on home for 3 s; during the splash it waits for the splash to end.
-    void result(const char* text, uint32_t now);
+    // A download's result, shown in home's top row until the next input; during the splash it waits for the splash
+    // to end.
+    void result(const char* text);
     // A firmware image is waiting: ask for a knob press.
     void confirmInstall(uint32_t now);
     // A fixed full-screen message that ignores input (battery empty).
@@ -140,7 +140,8 @@ public:
     };
 
 private:
-    void endSplash(Output& out, uint32_t now);
+    void endSplash(Output& out);
+    void showResult(const char* text);
     void goHome();
     void popTo();
     void openList(ListId id, bool push, const radio::State& s, const Status& st);
@@ -181,6 +182,7 @@ private:
     char toast_[96] = {};
     char result_[96] = {};
     uint32_t toastUntil_ = 0;
+    bool resultShown_ = false;  // toast_ holds a download result, shown until the next input
     uint32_t volUntil_ = 0;
     char entrySsid_[33] = {};
     bool entryServer_ = false;  // text entry for the NTP server, else a WiFi password

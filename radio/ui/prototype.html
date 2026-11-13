@@ -632,7 +632,8 @@ function daysLabel(days) { return days & IRREGULAR ? T('irr') : (days & EVERY_DA
 const hhmm4 = m => String(Math.floor(m / 60)).padStart(2, '0') + String(m % 60).padStart(2, '0');
 const windowText = e => hhmm4(e.start) + '-' + hhmm4(e.end);
 // Download mode simulated: the radio restarts into it, joins, checks the manifest, downloads, then restarts with the
-// result, which home shows once for 3 s after the splash. For the guide (kind 'guide') Back cancels with no result.
+// result, which home shows after the splash until the next input. For the guide (kind 'guide') Back cancels with
+// no result.
 // For the firmware (kind 'firmware') a newer version asks first: a press installs; a long press, the side button or
 // 30 s without a press cancel, as Back does at the other steps, and home shows Update cancelled.
 const DL_JOIN = 2000, DL_CHECK = 600, DL_GET = 5700, DL_BYTES = 191488;
@@ -850,8 +851,8 @@ function text2x(x, y, s) {
     x += 2 * g[0].length + 2;
   }
 }
-// The splash ends home; a download result stored before the restart shows there once, for 3 s.
-function endSplash() { goHome(); if (S.result) toast(S.result, 3000); S.result = null; }
+// The splash ends home; a download result stored before the restart shows in the top row until the next input.
+function endSplash() { goHome(); if (S.result) toast(S.result, Infinity); S.result = null; }
 function drawSplash(now) {
   const t = now - S.splashStart;
   if (t > SPLASH_MS) return endSplash();
@@ -872,7 +873,11 @@ function drawSplash(now) {
   }
   if (t > 1700) textR(128, 24, 'radio');
 }
-function noteInput(s) { S.lastInput = performance.now(); document.getElementById('lastIn').textContent = s; }
+function noteInput(s) {
+  S.lastInput = performance.now();
+  document.getElementById('lastIn').textContent = s;
+  if (S.toast && S.toast.until === Infinity) S.toast = null;
+}
 function onTurn(d) {
   if (S.view === 'message' || S.view === 'download') return;
   if (S.view === 'splash') { noteInput('skip splash'); return endSplash(); }
