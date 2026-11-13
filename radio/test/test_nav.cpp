@@ -29,8 +29,9 @@ TEST(ring_order_main_menu) {
     Menu m;
     CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Main);
     CHECK_EQ(m.ui.cursor(), 0);
-    // Clockwise: down the eight entries (Volume to Settings), then Mute, then Back, then the first entry.
-    const int expect[] = {1, 2, 3, 4, 5, 6, 7, -2, -1, 0, 1};
+    // Clockwise: down the nine entries (Volume to Settings, Station in every mode), then Mute, then Back, then the
+    // first entry.
+    const int expect[] = {1, 2, 3, 4, 5, 6, 7, 8, -2, -1, 0, 1};
     uint32_t t = 3100;
     for (int e : expect) {
         m.ev(t += 100, EventType::Turn, 1);
@@ -39,7 +40,7 @@ TEST(ring_order_main_menu) {
     m.ev(t += 100, EventType::Turn, -2);
     CHECK_EQ(m.ui.cursor(), -1);
     // Anticlockwise: Back, Mute, Settings and up the entries.
-    const int back[] = {-2, 7, 6, 5, 4, 3, 2, 1, 0, -1};
+    const int back[] = {-2, 8, 7, 6, 5, 4, 3, 2, 1, 0, -1};
     for (int e : back) {
         m.ev(t += 100, EventType::Turn, -1);
         CHECK_EQ(m.ui.cursor(), e);
@@ -260,7 +261,7 @@ TEST(side_press_is_back) {
     Menu i;
     i.ev(3100, EventType::Turn, -3);
     i.ev(3200, EventType::Press);
-    i.ev(3300, EventType::Turn, 6);
+    i.ev(3300, EventType::Turn, 7);
     i.ev(3400, EventType::Press);  // About
     CHECK(i.ui.view() == View::Info);
     i.ev(3500, EventType::Side);
@@ -441,7 +442,7 @@ TEST(language_setting) {
     Menu m;
     m.ev(3100, EventType::Turn, -3);
     m.ev(3200, EventType::Press);  // Settings
-    m.ev(3300, EventType::Turn, 5);
+    m.ev(3300, EventType::Turn, 6);
     m.ev(3400, EventType::Press);  // Language list, current language preselected
     CHECK(m.ui.listId() == ListId::Language);
     CHECK_EQ(m.ui.cursor(), 0);
@@ -518,3 +519,46 @@ TEST(clock_set_until_power_off) {
     CHECK_EQ(h.st.utcMs, 1794268800000LL + 60000);
     CHECK_EQ(h.st.syncAgeMs, 60000);
 }
+
+// The frequency guide: Station opens the guide list outside FM, a press shows an entry, Update guide asks for
+// download mode only with a configured network, and a download result waits for the splash to end.
+TEST(guide_station_and_update) {
+    Menu m;
+    m.ev(3100, EventType::Turn, 7);
+    m.ev(3200, EventType::Press);  // Station on 6070 kHz in AM
+    CHECK(m.ui.view() == View::List && m.ui.listId() == ListId::Guide);
+    CHECK_EQ(m.ui.cursor(), 0);
+    m.ev(3300, EventType::Press);
+    CHECK(m.ui.view() == View::Info);
+    m.ev(3400, EventType::Side);
+    CHECK(m.ui.listId() == ListId::Guide);
+    m.ev(3500, EventType::Side);
+    CHECK(m.ui.listId() == ListId::Main);
+    // Settings > Guide > Update guide.
+    m.ev(3600, EventType::Turn, 1);
+    m.ev(3700, EventType::Press);
+    m.ev(3800, EventType::Turn, 5);
+    m.ev(3900, EventType::Press);
+    CHECK(m.ui.listId() == ListId::GuideSettings);
+    CHECK_EQ(m.ui.cursor(), 1);
+    m.ev(4000, EventType::Press);
+    CHECK_EQ(m.commands[static_cast<int>(radio::Cmd::GuideUpdate)], 1);
+    // Without a configured network the press does nothing.
+    m.wifiNone();
+    m.ev(4100, EventType::Press);
+    CHECK_EQ(m.commands[static_cast<int>(radio::Cmd::GuideUpdate)], 1);
+    CHECK(m.ui.listId() == ListId::GuideSettings);
+}
+
+TEST(guide_result_after_splash) {
+    Sim r;
+    r.ui.result("Guide updated", Sim::kBoot + 500);  // during the splash: kept for its end
+    r.render(2000);
+    CHECK(r.ui.view() == View::Splash);
+    r.render(2700);  // the splash ends
+    CHECK(r.ui.view() == View::Home);
+    CHECK(r.render(2800).get(0, 0));  // the inverted top row
+    CHECK(r.render(5600).get(0, 0));
+    CHECK(!r.render(5800).get(0, 0));
+}
+

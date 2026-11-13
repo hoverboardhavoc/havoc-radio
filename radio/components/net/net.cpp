@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <new>
 
@@ -111,8 +112,21 @@ void scanDone() {
     uint16_t n = 0;
     esp_wifi_scan_get_ap_num(&n);
     if (n > 32) n = 32;
-    static wifi_ap_record_t recs[32];
+    // The records live only while the list is built.
+    wifi_ap_record_t one;
+    auto* recs = static_cast<wifi_ap_record_t*>(std::malloc(sizeof(wifi_ap_record_t) * (n ? n : 1)));
+    if (!recs) {
+        n = 1;
+        recs = &one;
+    }
     esp_wifi_scan_get_ap_records(&n, recs);
+    struct Free {
+        wifi_ap_record_t* p;
+        wifi_ap_record_t* one;
+        ~Free() {
+            if (p != one) std::free(p);
+        }
+    } release{recs, &one};
     std::sort(recs, recs + n, [](const wifi_ap_record_t& a, const wifi_ap_record_t& b) { return a.rssi > b.rssi; });
     Lock lock;
     s_info.netCount = 0;
@@ -209,6 +223,7 @@ void scan() {
 void info(Info& out) {
     Lock lock;
     out = s_info;
+    out.saved = s_haveCreds;
 }
 
 void timeSync(bool on, const char* server) {

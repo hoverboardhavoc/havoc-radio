@@ -118,6 +118,7 @@ enum class Cmd : uint8_t {
     SplashEnd,    // the splash ended or was skipped: WiFi starts
     TimeSync,     // v = 0/1
     NtpServer,    // the server typed in text entry
+    GuideUpdate,  // Settings > Guide > Update guide: restart into download mode
 };
 
 struct Command {

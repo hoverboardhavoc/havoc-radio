@@ -1,0 +1,2 @@
+# EiBi CSVs are kept byte for byte as served (Latin-1, CRLF); diffs still shown.
+radio/test/eibi/*.csv -text diff

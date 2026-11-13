@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "gfx.h"
+#include "guide_core.h"
 #include "radio_model.h"
 
 namespace ui {
@@ -44,7 +45,22 @@ struct Status {
     int64_t utcMs = -1;
     int64_t syncAgeMs = -1;
     radio::Lamp lamp = radio::Lamp::Off;
+    // The frequency guide: the loaded table (nullptr or not valid without one) and the entries for the tuned
+    // frequency in AM, LSB and USB, as guide::lookup orders them.
+    const guide::Info* guide = nullptr;
+    const guide::Hits* hits = nullptr;
+    bool netSaved = true;    // a WiFi network is configured
 };
+
+// The download mode's screen (a boot of its own, see guide/download): the step, and the bytes while downloading.
+struct Download {
+    enum class Step : uint8_t { Join, Check, Get };
+    Step step = Step::Join;
+    const char* ssid = "";
+    uint32_t done = 0;
+    uint32_t total = 0;
+};
+void drawDownload(gfx::Frame& f, int lang, const Download& d);
 
 struct Output {
     static constexpr int kMax = 8;
@@ -56,14 +72,17 @@ struct Output {
 };
 
 enum class View : uint8_t { Splash, Home, List, Adjust, Info, Entry, Confirm, Message, Station, Lamp };
-enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Language, Time };
+enum class ListId : uint8_t { Main, Bands, Modes, Presets, Steps, Bandwidth, Seek, Wifi, Settings, Language, Time,
+                              Guide, GuideSettings };
 enum class AdjustId : uint8_t { Volume, Contrast };
-enum class InfoId : uint8_t { Wifi, About };
+enum class InfoId : uint8_t { Wifi, About, GuideEntry };
 
 constexpr uint32_t kSplashMs = 2600;
 constexpr uint32_t kMenuTimeoutMs = 8000;
 constexpr uint32_t kConfirmTimeoutMs = 30000;
 constexpr uint32_t kToastMs = 1500;
+constexpr uint32_t kResultMs = 3000;    // a download result on home
+constexpr uint32_t kNameTurnMs = 3000;  // on-air names on home take turns
 constexpr int kPasswordMax = 64;
 
 constexpr int kRtRowW = 116;  // Station screen RadioText rows, from x = 10
@@ -85,7 +104,9 @@ public:
     void tick(uint32_t now, const radio::State& s, const Status& st, Output& out);
     void render(gfx::Frame& f, uint32_t now, const radio::State& s, const Status& st);
 
-    void toast(const char* text, uint32_t now);
+    void toast(const char* text, uint32_t now, uint32_t ms = kToastMs);
+    // A guide download's result, shown once on home for 3 s; during the splash it waits for the splash to end.
+    void result(const char* text, uint32_t now);
     // A firmware image is waiting: ask for a knob press.
     void confirmInstall(uint32_t now);
     // A fixed full-screen message that ignores input (battery empty).
@@ -111,7 +132,7 @@ public:
     };
 
 private:
-    void endSplash(Output& out);
+    void endSplash(Output& out, uint32_t now);
     void goHome();
     void popTo();
     void openList(ListId id, bool push, const radio::State& s, const Status& st);
@@ -150,6 +171,7 @@ private:
     AdjustId adjust_ = AdjustId::Volume;
     InfoId info_ = InfoId::Wifi;
     char toast_[96] = {};
+    char result_[96] = {};
     uint32_t toastUntil_ = 0;
     uint32_t volUntil_ = 0;
     char entrySsid_[33] = {};
@@ -162,10 +184,16 @@ private:
     char message_[64] = {};
     int stationTop_ = 0;     // first RadioText row on the Station screen
     uint8_t stationSeq_ = 0;  // Status::rtSeq of that text
+    // The guide entry whose details are shown.
+    struct GuideEntry {
+        guide::Entry e;
+        char name[guide::kStrMax + 1], lang[guide::kStrMax + 1], target[guide::kStrMax + 1];
+    } guideEntry_{};
 
     // The list currently on screen, rebuilt from the state when needed.
     enum class Act : uint8_t { None, Go, Adjust, Info, ToggleAgc, ToggleMute, Band, Mode, Preset, Step,
-                               Bandwidth, Seek, Join, Language, Station, ToggleTimeSync, Server, Lamp };
+                               Bandwidth, Seek, Join, Language, Station, ToggleTimeSync, Server, Lamp, GuideEntry,
+                               GuideUpdate };
     struct Item {
         char t[48];
         char mid[14];
@@ -173,6 +201,7 @@ private:
         Act act;
         int arg;
         bool skip;  // shown, not selectable
+        bool mark;  // a guide entry on air
     };
     struct Gutter {
         gfx::Icon icon;

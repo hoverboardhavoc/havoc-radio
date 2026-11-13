@@ -26,7 +26,7 @@ TaskHandle_t s_task;
 State s_state;
 Live s_live;
 rds::Decoder s_rds;
-rds::Ring s_rdsRing;
+rds::Ring* s_rdsRing;  // allocated by start()
 // Requests to the task, under the lock.
 int8_t s_seekReq = 0;
 bool s_stopReq = false;
@@ -177,7 +177,7 @@ void rdsPoll() {
         if (!st.fifoUsed) return;
         const rds::Group g{{st.blk[0], st.blk[1], st.blk[2], st.blk[3]}, st.ble};
         s_rds.group(g);
-        s_rdsRing.push(now, g);
+        s_rdsRing->push(now, g);
     }
 }
 
@@ -314,6 +314,7 @@ uint8_t barsFor(uint8_t rssi, bool fm) {
 
 void start(const State& initial) {
     s_lock = xSemaphoreCreateMutex();
+    s_rdsRing = new rds::Ring();
     s_state = initial;
     size_t n;
     s_live.ssb = si4732::patchValid(patchData(&n), n);
@@ -370,8 +371,9 @@ void rdsState(rds::Decoder& out) {
 
 int rdsGroups(rds::Raw* out, int max) {
     Lock lock;
-    const int n = s_rdsRing.count() < max ? s_rdsRing.count() : max;
-    for (int i = 0; i < n; i++) out[i] = s_rdsRing.at(s_rdsRing.count() - n + i);
+    if (!s_rdsRing) return 0;
+    const int n = s_rdsRing->count() < max ? s_rdsRing->count() : max;
+    for (int i = 0; i < n; i++) out[i] = s_rdsRing->at(s_rdsRing->count() - n + i);
     return n;
 }
 

@@ -29,17 +29,28 @@ build fails when `havoc-radio.bin` is longer than a slot. A stale `radio/sdkconf
 The build fetches the Si4732 SSB patch from the PU2CLR SI4735 library on GitHub into `radio/build/ssb/`. The patch
 is not part of this repository. Without network access the firmware still builds, without LSB and USB.
 
+The build also fetches the current frequency guide table, `v1/stations.bin`, from the data repository
+[eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) into `radio/build/guide/`, checks its
+length and SHA-256 against `v1/manifest.json` and its magic and format, and flashes it at the guide partition
+(`0x10000`) with the app, so a UART install and the install image carry a starting guide. The radio runs the
+format's full checks before it uses a table. When the fetch or the check fails the build prints a warning and
+continues; the radio then starts with no guide. The format and its converter belong to the data repository
+([FORMAT.md](https://github.com/hoverboardhavoc/eibi-binary-table/blob/main/FORMAT.md)).
+
 ## Tests
 
 `make test` builds and runs the host tests in `radio/test/`:
 
 - the font tables against the prototype;
-- 118 framebuffer goldens;
+- 244 framebuffer goldens;
 - the navigation and text entry rules;
 - the band, step and preset math;
 - the encoder decoder and the button timing;
 - the fit of every string in every language on every screen;
-- the receiver driver's opcode guard.
+- the receiver driver's opcode guard;
+- the guide reader on the data repository's tables (`radio/test/guide/`) and hostile ones, the on-air rule, the
+  two slots, and the download mode with a fake transport;
+- the web page's functions under Node, the guide update against a fake manifest and table among them.
 
 `STOCK_IMAGE=<path>` adds tests against a 4 MB flash backup of a K-Radio on the stock firmware.
 
@@ -74,5 +85,5 @@ within 30 s.
 | `radio/components/` | `board`, `i2c`, `si4732`, `ssd1306`, `gfx`, `ui`, `input`, `radio`, `rds`, `clock`, `store`, `net`, `web`, `power` |
 | `radio/components/web/page/index.html` | The web page served at `/` |
 | `radio/ui/prototype.html` | The UI reference |
-| `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch fetch, `idf.sh`, install image builder, app size check |
+| `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch and guide fetch, guide table converter, `idf.sh`, install image builder, app size check |
 | `radio/test/` | Host tests, scenarios and goldens |

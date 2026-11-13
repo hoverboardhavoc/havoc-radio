@@ -60,11 +60,14 @@ const char* ringLabel(int idx, char* buf) {
     return std::strcmp(k, "SPACE") == 0 ? "␣" : k;
 }
 
-// Text cut with an ellipsis to at most w pixels.
+// Text cut with an ellipsis to at most w pixels, and to whole characters within the n-byte buffer.
 void cutText(const char* s, int w, char* out, size_t n) {
-    copy(out, n, s);
-    if (gfx::textW(out) <= w) return;
-    size_t k = std::strlen(out);
+    size_t k = std::strlen(s);
+    const bool tooLong = k > n - 1;
+    if (tooLong) k = n - 1;
+    std::memcpy(out, s, k);
+    out[k] = 0;
+    if (!tooLong && gfx::textW(out) <= w) return;
     for (;;) {
         while (k && (static_cast<uint8_t>(out[k]) & 0xC0) == 0x80) k--;  // whole characters
         if (k + 4 <= n) {
@@ -83,6 +86,49 @@ void ageText(int lang, int64_t ms, char* out, size_t n) {
     else
         snprintf(out, n, i18n::tr(lang, Str::age_h), static_cast<int>(m / 60));
 }
+
+// Guide text as the display draws it: a character without a Pip glyph is "?".
+void pipText(const char* s, char* out, size_t n) {
+    size_t k = 0;
+    const char* p = s;
+    for (;;) {
+        const char* start = p;
+        const uint32_t cp = gfx::nextCp(p);
+        if (!cp) break;
+        const bool known = gfx::pipGlyph(cp) != nullptr;
+        const size_t len = known ? static_cast<size_t>(p - start) : 1;
+        if (k + len >= n) break;
+        if (known)
+            std::memcpy(out + k, start, len);
+        else
+            out[k] = '?';
+        k += len;
+    }
+    out[k] = 0;
+}
+
+// 0..1440 minutes as HHMM (2400 for 1440). Unsigned and clamped, so the compiler sees four digits.
+void hhmm4(unsigned m, char* out) {
+    if (m > 1440) m = 1440;
+    snprintf(out, 5, "%02u%02u", m / 60, m % 60);
+}
+
+// The entry's window, "1700-1800".
+void windowText(const guide::Entry& e, char* out) {
+    hhmm4(e.start, out);
+    out[4] = '-';
+    hhmm4(e.end, out + 5);
+}
+
+// The days: `irr`, `daily`, or EiBi's form.
+const char* daysLabel(int lang, uint8_t days, char* buf) {
+    if (days & guide::kIrregular) return i18n::tr(lang, Str::irr);
+    if ((days & guide::kEveryDay) == guide::kEveryDay) return i18n::tr(lang, Str::daily);
+    guide::daysText(days, buf);
+    return buf;
+}
+
+bool guideLoaded(const Status& st) { return st.guide && st.guide->valid; }
 
 void barsText(int n, char* out) {
     for (int i = 0; i < 3; i++) out[i] = i < n ? '|' : '.';
@@ -242,10 +288,14 @@ void Ui::begin(uint32_t now) {
     depth_ = 0;
 }
 
-void Ui::endSplash(Output& out) {
+void Ui::endSplash(Output& out, uint32_t now) {
     releaseWheel();
     goHome();
     out.push(Cmd::SplashEnd);
+    if (result_[0]) {
+        toast(result_, now, kResultMs);
+        result_[0] = 0;
+    }
 }
 
 void Ui::goHome() {
@@ -259,9 +309,16 @@ void Ui::popTo() {
     view_ = View::List;
 }
 
-void Ui::toast(const char* text, uint32_t now) {
+void Ui::toast(const char* text, uint32_t now, uint32_t ms) {
     copy(toast_, sizeof toast_, text);
-    toastUntil_ = now + kToastMs;
+    toastUntil_ = now + ms;
+}
+
+void Ui::result(const char* text, uint32_t now) {
+    if (view_ == View::Splash)
+        copy(result_, sizeof result_, text);
+    else
+        toast(text, now, kResultMs);
 }
 
 void Ui::confirmInstall(uint32_t now) {
@@ -289,6 +346,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
         it.act = act;
         it.arg = arg;
         it.skip = false;
+        it.mark = false;
     };
     char buf[24];
     auto tr = [&](Str k) { return i18n::tr(s.lang, k); };
@@ -303,7 +361,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             add(tr(Str::step), radio::currentStep(s).label, Act::Go, static_cast<int>(ListId::Steps));
             add(tr(Str::bandwidth), radio::currentBandwidth(s), Act::Go, static_cast<int>(ListId::Bandwidth));
             add(tr(Str::seek), "", Act::Go, static_cast<int>(ListId::Seek));
-            if (radio::isFm(s.mode)) add(tr(Str::station), "", Act::Station);
+            add(tr(Str::station), "", Act::Station);
             add(tr(Str::settings), "", Act::Go, static_cast<int>(ListId::Settings));
             gutter_[0] = {s.muted ? gfx::Icon::Muted : gfx::Icon::Volume, Act::ToggleMute, 0};
             gutterCount_ = 1;
@@ -392,6 +450,7 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             else
                 copy(buf, sizeof buf, "--:--");
             add(tr(Str::time), buf, Act::Go, static_cast<int>(ListId::Time));
+            add(tr(Str::guide), guideLoaded(st) ? st.guide->season : "", Act::Go, static_cast<int>(ListId::GuideSettings));
             add(tr(Str::language), i18n::kLangName[s.lang < i18n::kLangCount ? s.lang : 0], Act::Go,
                 static_cast<int>(ListId::Language));
             add(tr(Str::about), "", Act::Info, static_cast<int>(InfoId::About));
@@ -400,6 +459,37 @@ void Ui::build(ListId id, const State& s, const Status& st) {
             for (int i = 0; i < i18n::kLangCount; i++) add(i18n::kLangName[i], "", Act::Language, i);
             cur_ = s.lang < i18n::kLangCount ? s.lang : 0;
             break;
+        // Station in AM, LSB and USB: the frequency's guide entries, the on-air ones marked, each with its time window
+        // or irr; the name cut to leave 4 px before it.
+        case ListId::Guide:
+            for (int i = 0; st.hits && i < st.hits->n; i++) {
+                const guide::Hit& h = st.hits->hit[i];
+                char r[16], name[guide::kStrMax + 1], cut[sizeof items_[0].t];
+                if (h.e.days & guide::kIrregular)
+                    copy(r, sizeof r, tr(Str::irr));
+                else
+                    windowText(h.e, r);
+                pipText(h.name, name, sizeof name);
+                cutText(name, 124 - gfx::textW(r) - 4 - 17, cut, sizeof cut);
+                add(cut, r, Act::GuideEntry, i);
+                items_[count_ - 1].mark = h.onAir;
+            }
+            break;
+        // Settings > Guide: the loaded table, not selectable, and Update guide, which needs a configured network.
+        case ListId::GuideSettings: {
+            char label[16] = "";
+            if (guideLoaded(st)) {
+                snprintf(label, sizeof label, "EiBi %s", st.guide->season);
+                snprintf(buf, sizeof buf, "%u", static_cast<unsigned>(st.guide->entries));
+            } else {
+                buf[0] = 0;
+            }
+            add(guideLoaded(st) ? label : tr(Str::no_guide), buf, Act::None);
+            items_[count_ - 1].skip = true;
+            add(tr(Str::update_guide), st.netSaved ? "" : tr(Str::no_network), Act::GuideUpdate);
+            cur_ = 1;
+            break;
+        }
         // Time: the sync switch, the server (cut to fit its row) and the age of the last sync, not selectable.
         case ListId::Time: {
             add(tr(Str::time_sync), s.timeSync ? tr(Str::on) : tr(Str::off), Act::ToggleTimeSync);
@@ -501,7 +591,23 @@ void Ui::activate(const State& s, const Status& st, Output& out, uint32_t now) {
         case Act::Join: return startEntry(st.nets[arg].ssid, "", 0);
         case Act::Server: return startEntry(nullptr, s.ntpServer, kRingLen - 1);  // filled in, on OK
         case Act::ToggleTimeSync: return out.push(Cmd::TimeSync, !s.timeSync);
+        case Act::GuideEntry: {
+            if (!st.hits || arg >= st.hits->n) return;
+            const guide::Hit& h = st.hits->hit[arg];
+            guideEntry_.e = h.e;
+            copy(guideEntry_.name, sizeof guideEntry_.name, h.name);
+            copy(guideEntry_.lang, sizeof guideEntry_.lang, h.lang);
+            copy(guideEntry_.target, sizeof guideEntry_.target, h.target);
+            if (depth_ < 4) stack_[depth_++] = list_;
+            info_ = InfoId::GuideEntry;
+            view_ = View::Info;
+            return;
+        }
+        case Act::GuideUpdate:
+            if (st.netSaved) out.push(Cmd::GuideUpdate);
+            return;
         case Act::Station:
+            if (!radio::isFm(s.mode)) return openList(ListId::Guide, true, s, st);
             if (depth_ < 4) stack_[depth_++] = list_;
             view_ = View::Station;
             stationTop_ = 0;
@@ -527,7 +633,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
     // The side button's hold does nothing on the splash, a message or the confirm screen.
     if (e.type == EventType::SideHold && (view_ == View::Splash || view_ == View::Confirm)) return;
     lastInput_ = now;
-    if (view_ == View::Splash) return endSplash(out);
+    if (view_ == View::Splash) return endSplash(out, now);
     stopSeek(st, out);
     if (view_ == View::List) build(list_.id, s, st);
     const int d = e.n;
@@ -677,7 +783,7 @@ void Ui::event(const Event& e, uint32_t now, const State& s, const Status& st, O
 }
 
 void Ui::tick(uint32_t now, const State& s, const Status&, Output& out) {
-    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out);
+    if (view_ == View::Splash && now - splashStart_ > kSplashMs) endSplash(out, now);
     if ((view_ == View::List || view_ == View::Adjust || view_ == View::Info || view_ == View::Lamp) &&
         now - lastInput_ > kMenuTimeoutMs)
         goHome();
@@ -727,6 +833,24 @@ void Ui::drawSplash(Frame& f, uint32_t tms) {
     if (t > 1700) gfx::textR(f, 128, 24, "radio");
 }
 
+// The name on home: the on-air names of the lookup, each once, in its order, take turns every 3 s. False in FM,
+// without the clock or with nothing on air.
+static bool onAirName(uint32_t now, const State& s, const Status& st, char* out, size_t n) {
+    if (radio::isFm(s.mode) || st.utcMs < 0 || !st.hits) return false;
+    const char* names[guide::kMaxHits];
+    int count = 0;
+    for (int i = 0; i < st.hits->n; i++) {
+        const guide::Hit& h = st.hits->hit[i];
+        if (!h.onAir) continue;
+        bool dup = false;
+        for (int k = 0; k < count; k++) dup |= !std::strcmp(names[k], h.name);
+        if (!dup) names[count++] = h.name;
+    }
+    if (!count) return false;
+    pipText(names[now / kNameTurnMs % count], out, n);
+    return true;
+}
+
 void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
     char fs[16];
     const char* unit;
@@ -750,18 +874,28 @@ void Ui::drawHome(Frame& f, uint32_t now, const State& s, const Status& st) {
         snprintf(t, sizeof t, "%s  %s %s", band, i18n::tr(s.lang, Str::seek), st.seekDir > 0 ? "\u25b6" : "\u25c0");
         gfx::text(f, 0, 0, t);
     } else {
-        // On FM the station's RDS name, when known, replaces the band name and mode.
         int x;
-        if (radio::isFm(s.mode) && st.ps[0]) {
-            x = gfx::text(f, 0, 0, st.ps);
-        } else {
-            x = gfx::text(f, 0, 0, band);
-            x = gfx::text(f, x + 5, 0, radio::modeName(s.mode));
-        }
-        char t[48];
+        char t[48], name[guide::kStrMax + 1];
         snprintf(t, sizeof t, "%s %s", i18n::tr(s.lang, Str::home_step), radio::currentStep(s).label);
-        // The step yields to the Mute flag when they would overlap.
-        if (!s.muted || x + 5 + gfx::textW(t) < 80) gfx::text(f, x + 5, 0, t);
+        if (onAirName(now, s, st, name, sizeof name)) {
+            // In AM, LSB and USB the on-air name from the guide replaces the band name and mode, cut before the Mute
+            // flag or the signal bars; the step follows when it fits.
+            const int lim = s.muted ? 78 : 104;
+            char cut[sizeof name + 4];
+            cutText(name, lim, cut, sizeof cut);
+            x = gfx::text(f, 0, 0, cut);
+            if (x + 5 + gfx::textW(t) <= lim) gfx::text(f, x + 5, 0, t);
+        } else {
+            // On FM the station's RDS name, when known, replaces the band name and mode.
+            if (radio::isFm(s.mode) && st.ps[0]) {
+                x = gfx::text(f, 0, 0, st.ps);
+            } else {
+                x = gfx::text(f, 0, 0, band);
+                x = gfx::text(f, x + 5, 0, radio::modeName(s.mode));
+            }
+            // The step yields to the Mute flag when they would overlap.
+            if (!s.muted || x + 5 + gfx::textW(t) < 80) gfx::text(f, x + 5, 0, t);
+        }
         if (s.muted) {
             const char* flag = i18n::tr(s.lang, Str::home_mute);
             const int fw = gfx::textW(flag) + 3;
@@ -817,6 +951,17 @@ void Ui::drawList(Frame& f, const State& s, const Status& st) {
     build(list_.id, s, st);
     const int n = count_;
     drawGutter(f, list_.cursor, true, s);
+    const bool guideRows = list_.id == ListId::Guide;
+    if (guideRows && !n) {
+        if (!guideLoaded(st)) {
+            gfx::text(f, 10, 12, i18n::tr(s.lang, Str::no_guide));
+        } else {
+            char num[16], t[96];
+            snprintf(num, sizeof num, "%ld", static_cast<long>((s.hz + 500) / 1000));  // whole kHz
+            snprintf(t, sizeof t, i18n::tr(s.lang, Str::nothing_listed), num);
+            gfx::text(f, 10, 12, t);
+        }
+    }
     for (int r = 0; r < 4; r++) {
         const int i = list_.top + r;
         if (i >= n) break;
@@ -824,6 +969,12 @@ void Ui::drawList(Frame& f, const State& s, const Status& st) {
         const int y = r * 8, c = sel ? 0 : 1;
         const Item& it = items_[i];
         if (sel) f.fill(9, y, 117, 8, 1);
+        if (guideRows) {
+            if (it.mark) gfx::text(f, 11, y, "▶", c);
+            gfx::text(f, 17, y, it.t, c);
+            gfx::textR(f, 124, y, it.r, c);
+            continue;
+        }
         gfx::text(f, 11, y, it.t, c);
         if (it.mid[0]) gfx::text(f, 32, y, it.mid, c);
         if (it.r[0]) gfx::textR(f, 124, y, it.r, c);
@@ -876,6 +1027,22 @@ void Ui::drawInfo(Frame& f, const State& s, const Status& st) {
             snprintf(lines[1], sizeof lines[1], "%s", i18n::tr(s.lang, Str::access_point));
             snprintf(lines[2], sizeof lines[2], "Havoc-Radio");
         }
+    } else if (info_ == InfoId::GuideEntry) {
+        // The entry's details: name, window with the days, language and target as EiBi gives them.
+        const GuideEntry& g = guideEntry_;
+        char text[guide::kStrMax + 1], w[16], days[24], line[160];
+        pipText(g.name, text, sizeof text);
+        cutText(text, 118, lines[0], sizeof lines[0]);
+        windowText(g.e, w);
+        snprintf(line, sizeof line, "%s UTC %s", w, daysLabel(s.lang, g.e.days, days));
+        cutText(line, 118, lines[1], sizeof lines[1]);
+        pipText(g.lang, text, sizeof text);
+        snprintf(line, sizeof line, i18n::tr(s.lang, Str::language_s), text);
+        cutText(line, 118, lines[2], sizeof lines[2]);
+        pipText(g.target, text, sizeof text);
+        snprintf(line, sizeof line, i18n::tr(s.lang, Str::target_s), text);
+        cutText(line, 118, lines[3], sizeof lines[3]);
+        n = 4;
     } else {
         snprintf(lines[0], sizeof lines[0], "Havoc Radio %s", st.version);
         snprintf(lines[1], sizeof lines[1], "IP %s", st.ip);
@@ -963,6 +1130,27 @@ void Ui::drawConfirm(Frame& f, const State& s) {
     const char* const lines[] = {i18n::tr(s.lang, Str::confirm_title), i18n::tr(s.lang, Str::confirm_press),
                                  i18n::tr(s.lang, Str::confirm_long)};
     for (int i = 0; i < 3; i++) gfx::text(f, 10, i * 8 + 4, lines[i]);
+}
+
+// Download mode: the title, the step, during the download a bar by bytes with KB at the right, and Back: cancel.
+void drawDownload(Frame& f, int lang, const Download& d) {
+    f.clear();
+    gfx::text(f, 0, 0, i18n::tr(lang, Str::updating_guide));
+    char t[96];
+    if (d.step == Download::Step::Join)
+        snprintf(t, sizeof t, i18n::tr(lang, Str::toast_joining), d.ssid);
+    else
+        copy(t, sizeof t, i18n::tr(lang, d.step == Download::Step::Check ? Str::checking : Str::downloading));
+    gfx::text(f, 0, 8, t);
+    if (d.step == Download::Step::Get && d.total) {
+        for (int i = 0; i < 128; i += 2) f.px(i, 19, 1);
+        const uint64_t done = d.done < d.total ? d.done : d.total;
+        f.fill(0, 16, static_cast<int>((2 * done * 128 + d.total) / (2ull * d.total)), 7, 1);
+        snprintf(t, sizeof t, "%u/%u KB", static_cast<unsigned>((d.done + 512) / 1024),
+                 static_cast<unsigned>((d.total + 512) / 1024));
+        gfx::textR(f, 128, 24, t);
+    }
+    gfx::text(f, 0, 24, i18n::tr(lang, Str::back_cancel));
 }
 
 void Ui::drawMessage(Frame& f) { gfx::text(f, (gfx::W - gfx::textW(message_)) >> 1, 12, message_); }

@@ -152,9 +152,11 @@ class RegionSplit(unittest.TestCase):
         settings, pairs, images = havoc_images()
         regions = rf.build_regions(pairs, settings)
         sectors = {off: (len(data) + SECTOR - 1) // SECTOR for off, data in images}
+        # The starting frequency guide at 0x10000 is there when the build fetched one.
+        guide = [(0x10000, sectors[0x10000] * SECTOR, False)] if 0x10000 in sectors else []
         self.assertEqual([(r["target"], r["length"], r["erase"]) for r in regions],
                          [(0x0, sectors[0x0] * SECTOR, False), (0x8000, SECTOR, False),
-                          (0xd000, 0x2000, True), (0x100000, sectors[0x100000] * SECTOR, False)])
+                          (0xd000, 0x2000, True)] + guide + [(0x100000, sectors[0x100000] * SECTOR, False)])
         rebuilt = bytearray(b"\x00" * 0x200000)
         for r in regions:
             rebuilt[r["target"]:r["target"] + r["length"]] = r["data"] or b"\xff" * r["length"]

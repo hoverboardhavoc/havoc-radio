@@ -24,9 +24,13 @@ language list](docs/images/screens.png)
 - The interface comes in 41 languages, each listed under its own name.
 - A web page on the local network shows the frequency and signal live, tunes the radio, edits presets, sets up
   WiFi and uploads firmware. A new firmware only installs after a press of the knob on the radio.
-- The radio sets its clock in UTC from NTP while it is on a network and shows the time on the home screen. NTP is
-  its one outside network connection, and Settings turns it off. Without a home network it runs its own access
-  point `Havoc-Radio`.
+- In AM, LSB and USB it shows the name of the station on air on the home screen, and the frequency's schedule on a
+  Station screen, from a frequency guide converted from the [EiBi](http://www.eibispace.de/) shortwave schedule.
+  The guide updates on request, from the radio's Settings or from the web page; the
+  [eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) repository keeps it current.
+- The radio sets its clock in UTC from NTP while it is on a network and shows the time on the home screen. Settings
+  turns NTP off. Its only other outside connection is the guide download, when one is asked for. Without a home
+  network it runs its own access point `Havoc-Radio`.
 - Havoc Radio installs over WiFi on a radio with the stock firmware, through the radio's own update menu, with no
   soldering: [docs/installer.md](docs/installer.md).
 
@@ -38,10 +42,18 @@ language list](docs/images/screens.png)
   adapter; updates.
 - [docs/hardware.md](docs/hardware.md): the radio, where to buy it, its parts, pins and flash layout.
 - [docs/translations.md](docs/translations.md): how the translations are kept and checked.
+- [FORMAT.md](https://github.com/hoverboardhavoc/eibi-binary-table/blob/main/FORMAT.md) in eibi-binary-table: the
+  frequency guide's table format.
 - [docs/build-radio.md](docs/build-radio.md) and [docs/build-installer.md](docs/build-installer.md): building and
   testing the firmware and the installer.
 - [radio/ui/prototype.html](radio/ui/prototype.html): the UI reference. Open it in a browser to try every screen;
   its fonts, string tables and behaviour are what the firmware renders.
+
+## Frequency guide data
+
+The frequency guide comes from EiBi, the shortwave schedule compiled by Eike Bierwirth
+([eibispace.de](http://www.eibispace.de/)). EiBi's README says: "any person is absolutely free to download, use, copy,
+or distribute these files or to use them within third-party software."
 
 ## The radio
 
