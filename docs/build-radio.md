@@ -89,6 +89,7 @@ drawn a frame after the last: 200 with `{"steps": n}`, or 503 with the steps tak
 (the rest are still taken). A line that is not understood is answered with 400 and `{"line": n}` (line 0 for a body
 over 1 KB); a request made while an earlier script is still being taken is answered with 409. Injected events count
 as user activity. On the firmware confirm screen they are dropped, so an upload is installed only by the real knob.
+The web page's Screen view sends the knob and the side button under the screen this way.
 
 `radio/tools/radio_screens.py` runs a script of such lines against a radio and compares the captures of two runs.
 Each line is sent as its own request. A script may also contain:

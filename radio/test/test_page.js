@@ -21,7 +21,7 @@ assert(lib, 'no <script id="lib"> in the page');
 const ctx = vm.createContext({});
 vm.runInContext(lib[1] + "\n;Object.assign(globalThis, { rdsHtml, showView, clockHtml, timeHtml, ageText, bindTime, " +
   "daysText, guideRows, renderGuide, guideInfoText, sha256, updateGuide, sendGuide, GUIDE_BASE, openEvents, " +
-  "firmwareText, checkFirmware, scanText, renderScan, bindScan, pbm, drawScreen });", ctx);
+  "firmwareText, checkFirmware, scanText, renderScan, bindScan, pbm, drawScreen, queueInput, inputSender });", ctx);
 // The page's other script must at least compile.
 for (const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
 
@@ -96,6 +96,14 @@ eq(marked(), "radio", "the Radio link marked");
   ctx.drawScreen(c2d, s);
   eq(rects.join("|"), "#07090b 0,0 512x128|#e6f4ff 0,0 3x3|#e6f4ff 36,0 3x3|#e6f4ff 64,52 3x3|#e6f4ff 508,124 3x3",
     "background, then a dot per lit pixel");
+}
+
+// The knob: turns the same way add up, a turn the other way or a press starts a new line.
+{
+  const q = [];
+  for (const l of ["turn 1", "turn 1", "turn 1", "turn -1", "turn -1", "press", "turn 1", "long", "side"])
+    ctx.queueInput(q, l);
+  eq(q.join("|"), "turn 3|turn -2|press|turn 1|long|side", "input lines merged");
 }
 
 // The header: the radio's UTC in the browser's zone (Oslo, UTC+1 in November) and UTC, or `time not set`.
@@ -318,5 +326,31 @@ async function flow(radio, opts, postOk = true) {
   eq(JSON.stringify(tuned), "[5895000]", "a row press tunes to its frequency");
   ctx.renderScan(rows, null, 6070000, doc, () => {});
   eq(rows.children.length, 0, "no rows without a scan");
+  // The sender: one request at a time; lines given while it is out go together in the next, at most 64 a request.
+  {
+    const sent = [], answers = [], done = [];
+    const send = ctx.inputSender(script => { sent.push(script); return new Promise(r => answers.push(r)); },
+      ok => done.push(ok));
+    const tick = () => new Promise(r => setImmediate(r));
+    send("turn 1");
+    send("turn 1");
+    send("press");
+    for (let i = 0; i < 70; i++) send(i % 2 ? "side" : "press");
+    await tick();
+    eq(sent.length, 1, "one request out");
+    eq(sent[0], "turn 1", "first request");
+    answers[0](true);
+    await tick();
+    eq(sent.length, 2, "next request after the answer");
+    eq(sent[1].split("\n").length, 64, "at most 64 lines a request");
+    eq(sent[1].split("\n").slice(0, 3).join("|"), "turn 1|press|press", "waiting lines in order");
+    answers[1](false);
+    await tick();
+    eq(sent[2].split("\n").length, 8, "the other 8 in a third request");
+    answers[2](true);
+    await tick();
+    eq(sent.length, 3, "nothing more to send");
+    eq(done.join(" "), "true false true", "done after each request");
+  }
   console.log(`page: ${checks} checks, 0 failures`);
 })().catch(e => { console.error(e); process.exit(1); });

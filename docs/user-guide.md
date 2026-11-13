@@ -782,14 +782,21 @@ The Screen view shows the K-Radio's screen as it is, enlarged four times. It rea
 `GET http://radio.local/api/screen` about four times a second while the view is shown and the browser tab is in
 front.
 
+Below the screen, a knob and a side button work the K-Radio's controls. Drag the knob's ring, or scroll over the
+knob, to turn the wheel. Click the knob's centre to press the wheel, or hold it for 0.6 s for a long press. Click the
+side button for Back, or hold it for 1 s for the lamp. With the keyboard, the arrow keys turn the focused knob and
+`Enter` or `Space` presses it. The K-Radio acts on each input as on the real wheel and side button, except on the
+firmware update screen, where an install needs the real wheel. The page shows `Failed` when the K-Radio does not take
+an input, for example while another page's input is still being taken.
+
 The page uses the language chosen on the K-Radio. It shows `No connection` beside the time while it cannot reach the
 K-Radio.
 
-The page has no password. Anyone on the same network can tune the K-Radio and change its presets. Installing an
-uploaded firmware file needs a press of the wheel on the K-Radio itself. `Check for update` installs without a press,
-but only the latest Havoc Radio release from GitHub. The K-Radio connects to the internet in two cases: to the NTP
-server while time sync is on, and to GitHub (`raw.githubusercontent.com`) in the download mode that `Update guide`,
-`Update` in Settings > Firmware or the web page's `Check for update` starts.
+The page has no password. Anyone on the same network can tune the K-Radio, change its presets and work its controls from
+the Screen view. Installing an uploaded firmware file needs a press of the wheel on the K-Radio itself.
+`Check for update` installs without a press, but only the latest Havoc Radio release from GitHub. The K-Radio connects
+to the internet in two cases: to the NTP server while time sync is on, and to GitHub (`raw.githubusercontent.com`) in
+the download mode that `Update guide`, `Update` in Settings > Firmware or the web page's `Check for update` starts.
 
 ## Firmware updates
 
