@@ -1,4 +1,4 @@
-idf_component_register(SRCS "web.cpp"
+idf_component_register(SRCS "web.cpp" "streams.cpp"
                        INCLUDE_DIRS "include"
                        PRIV_REQUIRES esp_http_server app_update json lwip radio ui net power store clock
                        EMBED_TXTFILES "page/index.html")

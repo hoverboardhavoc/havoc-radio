@@ -13,6 +13,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "freertos/timers.h"
 #include "i18n_strings.h"
 #include "lwip/sockets.h"
@@ -20,6 +21,7 @@
 #include "power.h"
 #include "radio.h"
 #include "store.h"
+#include "streams.h"
 #include "utc_clock.h"
 
 extern const char page_start[] asm("_binary_index_html_start");
@@ -372,8 +374,11 @@ esp_err_t postTime(httpd_req_t* req) {
 
 // ---- server-sent events ----
 
-constexpr int kMaxStreams = 3;
-int s_streams[kMaxStreams] = {-1, -1, -1};
+// The open streams, touched only in the server task: the events handler, the push and the close callback.
+Streams s_streams;
+// A send to a stream waits at most this long; a send that does not finish in that time closes the stream.
+constexpr int kStreamSendTimeoutMs = 200;
+constexpr int kPushIntervalMs = 500;
 
 bool sendChunk(int fd, const char* data, size_t n) {
     char head[12];
@@ -381,43 +386,66 @@ bool sendChunk(int fd, const char* data, size_t n) {
     return send(fd, head, h, 0) == h && send(fd, data, n, 0) == static_cast<int>(n) && send(fd, "\r\n", 2, 0) == 2;
 }
 
+// Closes a stream at once. With linger on and a zero timeout, lwIP resets the connection and frees its unsent data
+// instead of keeping it for the retransmissions. The server closes the socket, so its sessions and onClose agree.
+void dropStream(int fd, void* = nullptr) {
+    const linger off = {1, 0};
+    setsockopt(fd, SOL_SOCKET, SO_LINGER, &off, sizeof off);
+    const esp_err_t r = httpd_sess_trigger_close(s_server, fd);
+    ESP_LOGI(TAG, "event stream %d closed%s", fd, r == ESP_OK ? "" : ", close not queued");
+}
+
 esp_err_t getEvents(httpd_req_t* req) {
     httpd_resp_set_type(req, "text/event-stream");
     httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    const int fd = httpd_req_to_sockfd(req);
-    int slot = -1;
-    for (int i = 0; i < kMaxStreams; i++)
-        if (s_streams[i] < 0 && slot < 0) slot = i;
-    if (slot < 0) {
+    if (s_streams.full()) {
         httpd_resp_set_status(req, "503 Service Unavailable");
         return httpd_resp_send(req, "busy", 4);
     }
+    const int fd = httpd_req_to_sockfd(req);
+    const timeval wait = {0, kStreamSendTimeoutMs * 1000};
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &wait, sizeof wait);
     // The first chunk sends the headers; later events go out as further chunks on the same socket.
     const char hello[] = "retry: 2000\n\n";
     if (httpd_resp_send_chunk(req, hello, sizeof hello - 1) != ESP_OK) return ESP_FAIL;
-    s_streams[slot] = fd;
+    s_streams.add(fd);
     return ESP_OK;
 }
 
+// An event goes only to a stream that can take it now: lwIP calls a socket writable once all its earlier data is
+// acknowledged. Otherwise the stream skips this push.
+Streams::Send sendEvent(int fd, void* arg) {
+    const Json* j = static_cast<const Json*>(arg);
+    fd_set writable;
+    FD_ZERO(&writable);
+    FD_SET(fd, &writable);
+    timeval now = {0, 0};
+    if (select(fd + 1, nullptr, &writable, nullptr, &now) != 1) return Streams::Send::Skipped;
+    return sendChunk(fd, j->c_str(), j->size()) ? Streams::Send::Sent : Streams::Send::Failed;
+}
+
 void pushEvents(void*) {
+    if (!s_streams.count()) return;
     static char buf[3328];
     Json j(buf, sizeof buf);
     j.raw("event: state\ndata: ");
     stateJson(j, false);
     j.raw("\n\n");
-    for (int i = 0; i < kMaxStreams; i++) {
-        if (s_streams[i] < 0) continue;
-        if (!sendChunk(s_streams[i], j.c_str(), j.size())) {
-            httpd_sess_trigger_close(s_server, s_streams[i]);
-            s_streams[i] = -1;
-        }
-    }
+    s_streams.push(sendEvent, dropStream, &j);
 }
 
 void onClose(httpd_handle_t, int fd) {
-    for (int i = 0; i < kMaxStreams; i++)
-        if (s_streams[i] == fd) s_streams[i] = -1;
+    s_streams.remove(fd);
     close(fd);
+}
+
+// Twice a second: state with RSSI/SNR to every open event stream, sent from the server task. The push is queued
+// from this task rather than a timer, so the timer task never waits on lwIP.
+void sseTask(void*) {
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(kPushIntervalMs));
+        httpd_queue_work(s_server, pushEvents, nullptr);
+    }
 }
 
 // ---- firmware upload ----
@@ -509,10 +537,7 @@ void start(const char* version) {
     handle("/api/time", HTTP_POST, postTime);
     handle("/api/events", HTTP_GET, getEvents);
     handle("/api/ota", HTTP_POST, postOta);
-    // Twice a second: state with RSSI/SNR to every open event stream, sent from the server task.
-    xTimerStart(xTimerCreate("sse", pdMS_TO_TICKS(500), pdTRUE, nullptr,
-                             [](TimerHandle_t) { httpd_queue_work(s_server, pushEvents, nullptr); }),
-                0);
+    xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }
 
 }  // namespace web

@@ -194,6 +194,18 @@ function bindTime(el, post) {
   el.def.onclick = () => post('/api/time', { server: '' });
   el.server.onkeydown = e => { if (e.key === 'Enter') el.save.onclick(); };
 }
+// The live state from /api/events. An EventSource reconnects by itself after a dropped connection but closes for
+// good on an error answer, such as 503 when the radio's streams are all taken; a new one then opens 5 s later.
+const EVENTS_RETRY_MS = 5000;
+function openEvents(onState, onOffline) {
+  const es = new EventSource('/api/events');
+  es.addEventListener('state', e => onState(JSON.parse(e.data)));
+  es.onerror = () => {
+    onOffline();
+    if (es.readyState === EventSource.CLOSED) setTimeout(() => openEvents(onState, onOffline), EVENTS_RETRY_MS);
+  };
+  return es;
+}
 </script>
 <script>
 const $ = id => document.getElementById(id);
@@ -323,9 +335,7 @@ $('upload').onclick = async () => {
 
 async function start() {
   render(await (await fetch('/api/state')).json());
-  const es = new EventSource('/api/events');
-  es.addEventListener('state', e => { render(JSON.parse(e.data)); $('status').textContent = ''; });
-  es.onerror = () => { $('status').textContent = t('web_offline'); };
+  openEvents(s => { render(s); $('status').textContent = ''; }, () => { $('status').textContent = t('web_offline'); });
 }
 start();
 </script>
