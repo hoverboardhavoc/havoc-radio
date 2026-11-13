@@ -32,6 +32,7 @@ constexpr uint32_t kFrameMs = 33;
 constexpr uint32_t kEmptyMessageMs = 3000;
 
 // The normal app's screen state, allocated when the app starts: download mode runs without it and needs the heap.
+// `shown` is the last frame sent to the display, which ssd1306::push keeps up to date (GET /api/screen reads it).
 struct App {
     ui::Ui ui;
     gfx::Frame frame, shown;
@@ -75,10 +76,8 @@ void handle(const ui::Output& out) {
 }
 
 void show(bool force) {
-    if (force || std::memcmp(s_app->frame.buf, s_app->shown.buf, sizeof s_app->frame.buf)) {
+    if (force || std::memcmp(s_app->frame.buf, s_app->shown.buf, sizeof s_app->frame.buf))
         ssd1306::push(s_app->frame.buf);
-        s_app->shown = s_app->frame;
-    }
 }
 
 // Battery empty: say so, then mute, power the receiver down, turn the lamp off and sleep with no wake source.
@@ -112,6 +111,7 @@ extern "C" void app_main() {
     if (store::takeGuideRequest()) download::run(s.lang);
     const uint8_t guideResult = store::takeGuideResult();
     s_app = new App();
+    ssd1306::keepFrames(s_app->shown.buf);
     lamp::start(s.light);
     int contrast = s.contrast, light = s.light;
 

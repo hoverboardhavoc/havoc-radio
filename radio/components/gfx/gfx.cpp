@@ -21,6 +21,16 @@ bool Frame::get(int x, int y) const {
     return (buf[x + (y >> 3) * W] >> (y & 7)) & 1;
 }
 
+void pbmRows(const uint8_t* fb, uint8_t* out) {
+    for (int y = 0; y < H; y++)
+        for (int b = 0; b < W / 8; b++) {
+            uint8_t v = 0;
+            for (int i = 0; i < 8; i++)
+                v = static_cast<uint8_t>(v << 1 | ((fb[b * 8 + i + (y >> 3) * W] >> (y & 7)) & 1));
+            out[y * (W / 8) + b] = v;
+        }
+}
+
 void Frame::fill(int x, int y, int w, int h, int c) {
     for (int j = y; j < y + h; j++)
         for (int i = x; i < x + w; i++) px(i, j, c);

@@ -68,6 +68,16 @@ make pngs       # renders every golden to radio/build/png/ at 4x for review
 A failing golden comparison writes the firmware's frame to `radio/build/host/actual/`.
 `radio/tools/pbm2png.py` renders it.
 
+## Bench
+
+`GET /api/screen` returns the last frame sent to the display as a binary PBM (`P4`, 128 × 32, lit pixels 1, as in
+the goldens). `radio/tools/pbm2png.py` renders it:
+
+```sh
+curl -s http://radio.local/api/screen -o screen.pbm
+python3 radio/tools/pbm2png.py screen.pbm .   # writes screen.png
+```
+
 ## Flash
 
 The Havoc Radio Installer puts the build on a K-Radio over WiFi or over UART: [installer.md](installer.md). Its

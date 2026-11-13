@@ -16,6 +16,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "freertos/timers.h"
+#include "gfx.h"
 #include "guide.h"
 #include "i18n_json.h"
 #include "i18n_strings.h"
@@ -23,6 +24,7 @@
 #include "net.h"
 #include "power.h"
 #include "radio.h"
+#include "ssd1306.h"
 #include "store.h"
 #include "streams.h"
 #include "utc_clock.h"
@@ -590,6 +592,25 @@ esp_err_t postGuide(httpd_req_t* req) {
     return sendGuide(req);
 }
 
+// ---- the screen ----
+
+// The last frame sent to the display, as a binary PBM with lit pixels 1.
+esp_err_t getScreen(httpd_req_t* req) {
+    static const char kHead[] = "P4\n128 32\n";
+    constexpr size_t kHeadLen = sizeof kHead - 1;
+    static_assert(kHeadLen + 2 * gfx::kBytes <= kJsonCap, "the PBM and the frame fit the JSON buffer");
+    uint8_t* frame = reinterpret_cast<uint8_t*>(s_json) + kHeadLen + gfx::kBytes;
+    if (!s_json || !ssd1306::lastFrame(frame)) {
+        httpd_resp_set_status(req, "503 Service Unavailable");
+        return httpd_resp_send(req, "busy", 4);
+    }
+    std::memcpy(s_json, kHead, kHeadLen);
+    gfx::pbmRows(frame, reinterpret_cast<uint8_t*>(s_json) + kHeadLen);
+    httpd_resp_set_type(req, "image/x-portable-bitmap");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    return httpd_resp_send(req, s_json, kHeadLen + gfx::kBytes);
+}
+
 // ---- firmware upload ----
 
 SemaphoreHandle_t s_decided;
@@ -671,7 +692,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 21;
+    cfg.max_uri_handlers = 22;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -695,6 +716,7 @@ void start(const char* version) {
     handle("/api/guide", HTTP_GET, getGuide);
     handle("/api/guide", HTTP_POST, postGuide);
     handle("/api/guide/update", HTTP_POST, postGuideUpdate);
+    handle("/api/screen", HTTP_GET, getScreen);
     xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }
 
