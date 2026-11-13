@@ -20,6 +20,10 @@ struct Frame {
     void fill(int x, int y, int w, int h, int c);
 };
 
+// A frame in page order (`fb`, kBytes) as the body of a binary PBM (P4): row by row, eight pixels a byte with the
+// leftmost in the top bit, lit = 1 as in the goldens.
+void pbmRows(const uint8_t* fb, uint8_t* out);
+
 enum class Icon : uint8_t { Volume, Muted };
 
 // Decodes one UTF-8 code point and advances s. Returns 0 at the end of the string.

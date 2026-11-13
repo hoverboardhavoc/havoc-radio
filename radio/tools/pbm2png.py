@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render 128x32 PBM goldens to PNG at 4x (or --scale N) for review.
+"""Render 128x32 PBMs (the goldens, or captures from GET /api/screen) to PNG at 4x (or --scale N) for review.
 
 usage: pbm2png.py [--scale N] <in.pbm>... <out dir>
 
@@ -16,12 +16,19 @@ GAP = (0, 0, 0)
 
 
 def read_pbm(path):
+    """Width, height and rows of bools of a PBM: plain (P1, the goldens) or binary (P4, GET /api/screen)."""
+    data = open(path, "rb").read()
+    if data.startswith(b"P4"):
+        magic, size, bits = data.split(b"\n", 2)
+        w, h = map(int, size.split())
+        stride = (w + 7) // 8
+        return w, h, [[bool(bits[y * stride + x // 8] >> (7 - x % 8) & 1) for x in range(w)] for y in range(h)]
     tokens = []
-    for line in open(path, encoding="ascii"):
+    for line in data.decode("ascii").splitlines():
         line = line.split("#", 1)[0]
         tokens += line.split()
     if tokens[0] != "P1":
-        raise ValueError(f"{path}: not a plain PBM")
+        raise ValueError(f"{path}: not a PBM")
     w, h = int(tokens[1]), int(tokens[2])
     bits = "".join(tokens[3:])
     return w, h, [[bits[y * w + x] == "1" for x in range(w)] for y in range(h)]

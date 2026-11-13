@@ -61,13 +61,15 @@ td.a button { padding: 2px 7px; }
 .guide tr.on td { color: var(--accent); font-weight: 600; }
 #guideMsg { color: var(--muted); margin: 6px 0 0; }
 #guideMsg:empty { display: none; }
+#screen { display: block; width: 100%; image-rendering: pixelated; border-radius: 6px; }
 </style>
 </head>
 <body>
 <main>
   <header>
     <h1>Havoc Radio</h1>
-    <nav><a href="#" data-view="radio" data-t="web_radio"></a><a href="#settings" data-view="settings" data-t="web_settings"></a></nav>
+    <nav><a href="#" data-view="radio" data-t="web_radio"></a><a href="#settings" data-view="settings" data-t="web_settings"></a>
+      <a href="#screen" data-view="screen" data-t="web_screen"></a></nav>
     <span class="clock"><span id="clock"></span> <span id="status"></span></span>
   </header>
 
@@ -154,6 +156,10 @@ td.a button { padding: 2px 7px; }
     <div class="meta"><span id="version"></span><span id="battery"></span></div>
   </section>
   </div>
+
+  <div class="view" id="screenView" hidden>
+  <section><canvas id="screen" width="512" height="128"></canvas></section>
+  </div>
 </main>
 <script id="lib">
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -174,13 +180,14 @@ function rdsHtml(r, hz, t) {
 }
 // A translated string with %d and %s filled in order; %% is a percent sign.
 function fmt(s, ...a) { return s.replace(/%[ds%]/g, m => m === '%%' ? '%' : String(a.shift())); }
-// The view for a location hash: Settings for #settings, else Radio. `els` has the two views and the header links;
-// the link of the view shown is marked.
-function viewOf(hash) { return hash === '#settings' ? 'settings' : 'radio'; }
+// The view for a location hash: Settings for #settings, Screen for #screen, else Radio. `els` has the three views
+// and the header links; the link of the view shown is marked.
+function viewOf(hash) { return hash === '#settings' ? 'settings' : hash === '#screen' ? 'screen' : 'radio'; }
 function showView(hash, els) {
   const v = viewOf(hash);
   els.radio.hidden = v !== 'radio';
   els.settings.hidden = v !== 'settings';
+  els.screen.hidden = v !== 'screen';
   els.links.forEach(a => a.classList.toggle('on', a.dataset.view === v));
   return v;
 }
@@ -208,6 +215,29 @@ function timeHtml(time, utcMs, now, zone, t) {
       : esc(fmt(t('web_synced'), ageText(utcMs - time.last_sync_ms, t), time.server))],
   ];
   return `<dl>${rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl>`;
+}
+// ---- the screen ----
+// A binary PBM (P4) as GET /api/screen sends it: {w, h, on(x, y)}, or null for anything else.
+function pbm(bytes) {
+  const tok = [];
+  let i = 0;
+  while (tok.length < 3 && i < bytes.length) {
+    while (i < bytes.length && (bytes[i] === 10 || bytes[i] === 32)) i++;
+    let s = '';
+    while (i < bytes.length && bytes[i] !== 10 && bytes[i] !== 32) s += String.fromCharCode(bytes[i++]);
+    tok.push(s);
+  }
+  const w = +tok[1], h = +tok[2], stride = (w + 7) >> 3, data = bytes.subarray(i + 1);
+  if (tok[0] !== 'P4' || !(w > 0 && h > 0) || data.length < stride * h) return null;
+  return { w, h, on: (x, y) => (data[y * stride + (x >> 3)] >> (7 - (x & 7))) & 1 };
+}
+// The screen as the OLED shows it, four canvas pixels a pixel: lit ones a pale blue 3x3 dot on black.
+function drawScreen(ctx, s) {
+  ctx.fillStyle = '#07090b';
+  ctx.fillRect(0, 0, s.w * 4, s.h * 4);
+  ctx.fillStyle = '#e6f4ff';
+  for (let y = 0; y < s.h; y++)
+    for (let x = 0; x < s.w; x++) if (s.on(x, y)) ctx.fillRect(x * 4, y * 4, 3, 3);
 }
 // ---- the frequency guide ----
 const GUIDE_BASE = 'https://raw.githubusercontent.com/hoverboardhavoc/eibi-binary-table/main/v1/';
@@ -468,9 +498,27 @@ bindTime({ sync: $('timeSync'), server: $('server'), save: $('serverSave'), def:
   $('timeMsg').textContent = '';
   if (!(await post(url, body))) $('timeMsg').textContent = t('web_failed');
 });
-const views = { radio: $('radioView'), settings: $('settingsView'), links: [...document.querySelectorAll('nav a')] };
-addEventListener('hashchange', () => showView(location.hash, views));
-showView(location.hash, views);
+const views = { radio: $('radioView'), settings: $('settingsView'), screen: $('screenView'),
+  links: [...document.querySelectorAll('nav a')] };
+// The Screen view reads GET /api/screen while it is shown and the tab is visible, one request at a time.
+const SCREEN_MS = 250;
+let screenRunning = false;
+async function screenLoop() {
+  screenRunning = true;
+  while (!views.screen.hidden && !document.hidden) {
+    try {
+      const r = await fetch('/api/screen', { cache: 'no-store' });
+      const s = r.ok && pbm(new Uint8Array(await r.arrayBuffer()));
+      if (s) drawScreen($('screen').getContext('2d'), s);
+    } catch (e) { /* the next pass tries again */ }
+    await new Promise(done => setTimeout(done, SCREEN_MS));
+  }
+  screenRunning = false;
+}
+function onView() { if (showView(location.hash, views) === 'screen' && !screenRunning) screenLoop(); }
+addEventListener('hashchange', onView);
+document.addEventListener('visibilitychange', onView);
+onView();
 setInterval(showClock, 1000);
 $('upload').onclick = async () => {
   const f = $('fw').files[0];

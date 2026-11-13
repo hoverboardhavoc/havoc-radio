@@ -155,3 +155,21 @@ TEST(frame_page_layout) {
     for (uint8_t b : f.buf) lit += __builtin_popcount(b);
     CHECK_EQ(lit, 2);
 }
+
+TEST(frame_pbm_rows) {
+    gfx::Frame f;
+    f.clear();
+    f.px(0, 0, 1);
+    f.px(9, 0, 1);
+    f.px(127, 31, 1);
+    f.px(16, 13, 1);
+    uint8_t rows[gfx::kBytes];
+    gfx::pbmRows(f.buf, rows);
+    CHECK_EQ(rows[0], 0x80);
+    CHECK_EQ(rows[1], 0x40);
+    CHECK_EQ(rows[13 * 16 + 2], 0x80);
+    CHECK_EQ(rows[31 * 16 + 15], 0x01);
+    int lit = 0;
+    for (uint8_t b : rows) lit += __builtin_popcount(b);
+    CHECK_EQ(lit, 4);
+}

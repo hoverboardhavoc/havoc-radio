@@ -631,9 +631,9 @@ The K-Radio serves a web page on the local network. A phone or computer on the s
 
 ### What it does
 
-The page has two views, `Radio` and `Settings`, with links at the top. The Settings view has its own address,
-`http://radio.local/#settings`. Below the links the page shows the K-Radio's time in the browser's time zone and in
-UTC, or `time not set` before the K-Radio has set its clock.
+The page has three views, `Radio`, `Settings` and `Screen`, with links at the top. The Settings and Screen views have
+their own addresses, `http://radio.local/#settings` and `http://radio.local/#screen`. Below the links the page shows
+the K-Radio's time in the browser's time zone and in UTC, or `time not set` before the K-Radio has set its clock.
 
 The Radio view:
 
@@ -668,6 +668,10 @@ The Settings view:
   repository. The K-Radio checks every table it receives and keeps its loaded guide when a table fails.
 - Under `Firmware`, `Upload` installs new firmware (see [Firmware updates](#firmware-updates)). The section also shows
   the version and the battery level.
+
+The Screen view shows the K-Radio's screen as it is, enlarged four times. It reads the screen from
+`GET http://radio.local/api/screen` about four times a second while the view is shown and the browser tab is in
+front.
 
 The page uses the language chosen on the K-Radio. It shows `No connection` beside the time while it cannot reach the
 K-Radio.
