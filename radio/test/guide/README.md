@@ -4,9 +4,9 @@ Frequency guide tables (format 1) for the reader's host tests, the screen replay
 `a26.bin` from EiBi's B26 and A26 CSVs, `b26.bin.json` (the manifest the converter writes for `b26.bin`),
 `rows.bin` (rows for every day form, time and frequency rule) and `sample.bin` (the UI prototype's sample guide).
 
-They are written by the converter tests of
-[eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table) at commit `39749a8`:
+`radio/test/make_guide_tables.py` writes them with the converter of
+[eibi-binary-table](https://github.com/hoverboardhavoc/eibi-binary-table), which defines the format:
 
 ```
-python3 tools/test_guide_table.py OUT_DIR
+python3 radio/test/make_guide_tables.py <eibi-binary-table checkout>
 ```
