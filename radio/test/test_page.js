@@ -1,8 +1,9 @@
 // The radio web page's functions under Node, from the page's <script id="lib">, with the English strings from the
 // prototype's table: the RDS rendering on a state as GET /api/state sends it (radio/test/rds/state-99.5.json, the
-// fields decoded from the 99.5 MHz bench capture), the Radio and Settings views by the location hash, the header
-// clock, the Time card and its controls posting /api/time, and the frequency guide: the Radio view's table, the
-// Settings > Guide card's update against a fake manifest and table, and From file; the event stream's reopening.
+// fields decoded from the 99.5 MHz bench capture), the Radio, Settings and Screen views by the location hash, the
+// Screen view's PBM reader and drawing, the header clock, the Time card and its controls posting /api/time, and the
+// frequency guide: the Radio view's table, the Settings > Guide card's update against a fake manifest and table, and
+// From file; the event stream's reopening.
 //
 //   node test_page.js ROOT
 "use strict";
@@ -18,7 +19,7 @@ const lib = page.match(/<script id="lib">([\s\S]*?)<\/script>/);
 assert(lib, 'no <script id="lib"> in the page');
 const ctx = vm.createContext({});
 vm.runInContext(lib[1] + "\n;Object.assign(globalThis, { rdsHtml, showView, clockHtml, timeHtml, ageText, bindTime, " +
-  "daysText, guideRows, renderGuide, guideInfoText, sha256, updateGuide, sendGuide, GUIDE_BASE, openEvents });", ctx);
+  "daysText, guideRows, renderGuide, guideInfoText, sha256, updateGuide, sendGuide, GUIDE_BASE, openEvents, pbm, drawScreen });", ctx);
 // The page's other script must at least compile.
 for (const m of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) new vm.Script(m[1]);
 
@@ -53,20 +54,47 @@ eq(ctx.rdsHtml({ ...r, ps: "A&B <i>", rt: '"€"', af: [531000, 99500000] }, sta
   '<div class="ps">A&amp;B &lt;i&gt;</div><div class="rt">&quot;€&quot;</div>' +
   '<div class="meta"><span class="tag">News</span><span class="tag">TP</span><span class="mono">PI F395</span></div>' +
   '<div class="meta af">Also on <span>531k</span></div>', "text escaped; MW frequency as text");
-// The two views, switched by the location hash.
+// The three views, switched by the location hash.
 function el(view) {
   const cls = new Set();
   return { hidden: false, dataset: { view }, classList: { toggle: (c, on) => (on ? cls.add(c) : cls.delete(c)), has: c => cls.has(c) } };
 }
-const views = { radio: el(), settings: el(), links: [el("radio"), el("settings")] };
+const views = { radio: el(), settings: el(), screen: el(), links: [el("radio"), el("settings"), el("screen")] };
+const shown = () => ["radio", "settings", "screen"].filter(v => !views[v].hidden).join();
+const marked = () => views.links.filter(a => a.classList.has("on")).map(a => a.dataset.view).join();
 eq(ctx.showView("#settings", views), "settings", "#settings shows Settings");
-eq(views.radio.hidden && !views.settings.hidden, true, "only the Settings view shown");
-eq(views.links[1].classList.has("on") && !views.links[0].classList.has("on"), true, "the Settings link marked");
+eq(shown() + "|" + marked(), "settings|settings", "only the Settings view shown, its link marked");
+eq(ctx.showView("#screen", views), "screen", "#screen shows Screen");
+eq(shown() + "|" + marked(), "screen|screen", "only the Screen view shown, its link marked");
 for (const h of ["", "#", "#radio", "#other"]) {
   eq(ctx.showView(h, views), "radio", `hash '${h}' shows Radio`);
-  eq(!views.radio.hidden && views.settings.hidden, true, `only the Radio view shown for '${h}'`);
+  eq(shown(), "radio", `only the Radio view shown for '${h}'`);
 }
-eq(views.links[0].classList.has("on") && !views.links[1].classList.has("on"), true, "the Radio link marked");
+eq(marked(), "radio", "the Radio link marked");
+
+// The Screen view: GET /api/screen's PBM, read and drawn as 3x3 dots on a 4x4 grid.
+{
+  const head = Buffer.from("P4\n128 32\n");
+  const bits = new Uint8Array(16 * 32);
+  bits[0] = 0x80;               // (0, 0)
+  bits[1] = 0x40;               // (9, 0)
+  bits[13 * 16 + 2] = 0x80;     // (16, 13)
+  bits[31 * 16 + 15] = 0x01;    // (127, 31)
+  const s = ctx.pbm(new Uint8Array([...head, ...bits]));
+  eq(s.w + "x" + s.h, "128x32", "PBM size");
+  const lit = [];
+  for (let y = 0; y < s.h; y++) for (let x = 0; x < s.w; x++) if (s.on(x, y)) lit.push(`${x},${y}`);
+  eq(lit.join(" "), "0,0 9,0 16,13 127,31", "PBM pixels");
+  eq(ctx.pbm(new Uint8Array([...Buffer.from("P4 128 32\n"), ...bits])) !== null, true, "PBM header with spaces");
+  eq(ctx.pbm(new Uint8Array([...head, ...bits.slice(1)])), null, "a short PBM refused");
+  eq(ctx.pbm(new Uint8Array([...Buffer.from("P1\n128 32\n"), ...bits])), null, "a plain PBM refused");
+  eq(ctx.pbm(new Uint8Array(0)), null, "nothing refused");
+  const rects = [];
+  const c2d = { fillStyle: "", fillRect(x, y, w, h) { rects.push(`${this.fillStyle} ${x},${y} ${w}x${h}`); } };
+  ctx.drawScreen(c2d, s);
+  eq(rects.join("|"), "#07090b 0,0 512x128|#e6f4ff 0,0 3x3|#e6f4ff 36,0 3x3|#e6f4ff 64,52 3x3|#e6f4ff 508,124 3x3",
+    "background, then a dot per lit pixel");
+}
 
 // The header: the radio's UTC in the browser's zone (Oslo, UTC+1 in November) and UTC, or `time not set`.
 const utc = Date.UTC(2026, 10, 10, 13, 5, 42);
