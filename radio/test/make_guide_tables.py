@@ -7,6 +7,7 @@ EIBI_BINARY_TABLE_DIR is a checkout of hoverboardhavoc/eibi-binary-table. Its to
 
 - b26.bin and a26.bin (with b26.bin.json, the manifest): EiBi's B26 and A26 CSVs from its tools/fixtures/full/;
 - rows.bin: the reader's host test rows below;
+- scan.bin: the guide scan's host test rows below;
 - sample.bin: the UI prototype's sample guide (GUIDE_CSV in radio/ui/prototype.html).
 
 The tables are committed; make test does not run this script. Run it again when the rows or the format change.
@@ -32,6 +33,25 @@ HOST_ROWS = [
     b"9001;0000-2400;;X;All day;E;Eu;;;;",
     b"9001.1;0000-2400;;X;Too high;E;Eu;;;;",
 ] + [b"12000;%02d00-%02d30;;X;Hour %02d;E;Eu;;;;" % (h, h, h) for h in range(20)]
+
+# The guide scan's host tests (radio/test/test_scan.cpp): frequencies rounding to the band's edges and across them,
+# 0.1 kHz entries rounding together, an exact duplicate, irregular and off-air entries.
+SCAN_ROWS = [
+    b"5899.4;0000-2400;;X;Below;E;Eu;;;;",
+    b"5899.5;1300-1400;;X;Edge low;E;Eu;;;;",
+    b"5940;1400-1500;;X;Later;E;Eu;;;;",
+    b"5940.1;0000-2400;;X;Rounded;E;Eu;;;;",
+    b"5940.4;0000-2400;;X;Rounded too;E;Eu;;;;",
+    b"5940.5;0000-2400;;X;Next up;E;Eu;;;;",
+    b"6000;1300-1400;;X;Duplicate;E;Eu;;;;",
+    b"6000;1300-1400;;X;Duplicate;E;Eu;;;;",
+    b"6000;0000-2400;;X;Second;E;Eu;;;;",
+    b"6100;0600-0700;irr;X;Irregular;E;Eu;;;;",
+    b"6150;1200-1300;Tu;X;Tuesday noon;E;Eu;;;;",
+    b"6200.4;0000-2400;;X;Top;E;Eu;;;;",
+    b"6200.5;0000-2400;;X;Above;E;Eu;;;;",
+    b"7000;0000-2400;;X;Forty;E;Eu;;;;",
+]
 
 
 def table(g, rows, season):
@@ -62,6 +82,7 @@ def main():
                    "--modified", str(MODIFIED), *manifest]) != 0:
             sys.exit(f"{season}: the converter reported errors")
     write("rows.bin", table(g, HOST_ROWS, "A26"))
+    write("scan.bin", table(g, SCAN_ROWS, "A26"))
     proto = open(os.path.join(RADIO, "ui", "prototype.html"), encoding="utf-8").read()
     block = re.search(r"const GUIDE_CSV = \[(.*?)\];", proto, re.S).group(1)
     write("sample.bin", table(g, [r.encode("latin-1") + b";;;;" for r in re.findall(r"'([^']*)'", block)], "B26"))

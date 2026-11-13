@@ -54,6 +54,7 @@ LIB_SRC := $(RADIO)/components/gfx/gfx.cpp $(RADIO)/components/ui/ui.cpp $(RADIO
 	$(RADIO)/components/input/input_logic.cpp $(RADIO)/components/rds/rds.cpp \
 	$(RADIO)/components/clock/clock_core.cpp $(RADIO)/components/lamp/lamp_core.cpp \
 	$(RADIO)/components/guide/guide_core.cpp $(RADIO)/components/guide/guide_slots.cpp \
+	$(RADIO)/components/guide/scan_core.cpp \
 	$(RADIO)/components/download/download_core.cpp $(RADIO)/components/web/streams.cpp
 TEST_SRC := $(wildcard $(RADIO)/test/*.cpp)
 GEN_SRC := $(GEN)/fonts_data.cpp $(GEN)/i18n_strings.cpp

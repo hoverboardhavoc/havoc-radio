@@ -98,6 +98,27 @@ void withHits(void (*fn)(const Hits&, bool, void*), void* arg) {
     fn(*s_hits, s_am, arg);
 }
 
+bool scanFirst(scan::Cursor& c, int32_t loKhz, int32_t hiKhz, int64_t utcMs, uint32_t& generation) {
+    Lock lock;
+    if (s_slots.active() < 0) return false;
+    generation = s_generation;
+    scan::first(s_slots.source(), s_slots.info(), c, loKhz, hiKhz, utcMs);
+    return true;
+}
+
+bool scanNext(scan::Cursor& c, uint32_t generation, uint16_t& khz, uint16_t& name) {
+    Lock lock;
+    if (generation != s_generation || s_slots.active() < 0) return false;
+    return scan::next(s_slots.source(), s_slots.info(), c, khz, name);
+}
+
+bool stringOf(uint32_t generation, uint16_t idx, char* out) {
+    out[0] = 0;
+    Lock lock;
+    if (generation != s_generation || s_slots.active() < 0) return false;
+    return readString(s_slots.source(), s_slots.info(), idx, out);
+}
+
 Update::Update() : sector_(nullptr), writer_(nullptr) {}
 
 Update::~Update() {

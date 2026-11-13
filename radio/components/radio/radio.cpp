@@ -8,6 +8,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "guide.h"
 #include "si4732.h"
 
 #if HAVE_SSB_PATCH
@@ -31,6 +32,9 @@ rds::Ring* s_rdsRing;  // allocated by start()
 int8_t s_seekReq = 0;
 bool s_stopReq = false;
 bool s_shutdown = false;
+// The guide scan, and a new one waiting for the task.
+scan::State s_scan;
+bool s_scanReq = false;
 
 class Lock {
 public:
@@ -81,27 +85,29 @@ struct Applied {
 
 void setAmp(const State& s, const Applied& a) { board::ampMute(!a.up || s.muted); }
 
-bool applyTune(const State& s, Applied& a) {
+bool tuneTo(Mode m, int32_t hz, Applied& a) {
     bool ok;
-    switch (s.mode) {
-        case Mode::FM: ok = si4732::tuneFm(static_cast<uint16_t>(s.hz / 10000)); break;
+    switch (m) {
+        case Mode::FM: ok = si4732::tuneFm(static_cast<uint16_t>(hz / 10000)); break;
         case Mode::AM: {
-            const int32_t khz = s.hz / 1000;
+            const int32_t khz = hz / 1000;
             ok = si4732::tuneAm(static_cast<uint16_t>(khz), amAntennaCap(khz));
             break;
         }
         default: {
             // Whole kHz on the chip, the rest on the BFO.
-            const int32_t khz = (s.hz + 500) / 1000;
-            ok = si4732::tuneSsb(static_cast<uint16_t>(khz), s.mode == Mode::USB, amAntennaCap(khz)) &&
-                 si4732::setProperty(si4732::prop::kSsbBfo, static_cast<uint16_t>(static_cast<int16_t>(s.hz - khz * 1000)));
+            const int32_t khz = (hz + 500) / 1000;
+            ok = si4732::tuneSsb(static_cast<uint16_t>(khz), m == Mode::USB, amAntennaCap(khz)) &&
+                 si4732::setProperty(si4732::prop::kSsbBfo, static_cast<uint16_t>(static_cast<int16_t>(hz - khz * 1000)));
             break;
         }
     }
-    a.hz = s.hz;
-    a.mode = s.mode;
+    a.hz = hz;
+    a.mode = m;
     return ok;
 }
+
+bool applyTune(const State& s, Applied& a) { return tuneTo(s.mode, s.hz, a); }
 
 bool powerUpFor(const State& s, Applied& a) {
     board::ampMute(true);
@@ -181,6 +187,66 @@ void rdsPoll() {
     }
 }
 
+// The guide scan: the frequencies counted, then each tuned in the current mode and its signal read after kSettleMs,
+// with the audio muted. The state's frequency is left alone, so the task tunes back to it afterwards, or to the result
+// the UI has chosen. A stop, a cancel or a new scan ends it; a measurement in flight is then dropped.
+void runScan(const State& s, Applied& a) {
+    uint16_t id;
+    int32_t lo, hi;
+    int64_t utc;
+    {
+        Lock lock;
+        s_scanReq = false;
+        id = s_scan.id;
+        lo = s_scan.loKhz;
+        hi = s_scan.hiKhz;
+        utc = s_scan.utcMs;
+    }
+    scan::Cursor c;
+    uint32_t gen = 0;
+    uint16_t total = 0, khz, name;
+    if (!isFm(s.mode) && guide::scanFirst(c, lo, hi, utc, gen)) {
+        scan::Cursor k = c;
+        while (guide::scanNext(k, gen, khz, name)) total++;
+    }
+    {
+        Lock lock;
+        if (s_scan.id != id) return;
+        s_scan.total = total;
+        s_scan.generation = gen;
+    }
+    board::ampMute(true);
+    si4732::setProperty(si4732::prop::kRxHardMute, 3);
+    a.muted = -1;
+    const int64_t t0 = esp_timer_get_time();
+    unsigned n = 0;
+    while (total) {
+        {
+            Lock lock;
+            if (s_shutdown || s_scan.id != id || s_scan.phase != scan::Phase::Running) break;
+        }
+        if (!guide::scanNext(c, gen, khz, name)) break;
+        {
+            Lock lock;
+            if (s_scan.id == id) s_scan.khz = khz;
+        }
+        tuneTo(s.mode, khz * 1000, a);
+        vTaskDelay(pdMS_TO_TICKS(scan::kSettleMs));
+        uint8_t rssi = 0, snr = 0;
+        si4732::rsq(false, rssi, snr);
+        n++;
+        Lock lock;
+        if (s_scan.id == id) scan::measured(s_scan, {khz, rssi, snr, name});
+    }
+    {
+        Lock lock;
+        if (s_scan.id == id) scan::stop(s_scan);
+    }
+    const long ms = static_cast<long>((esp_timer_get_time() - t0) / 1000);
+    ESP_LOGI(TAG, "scan: %u of %u frequencies in %ld ms, %ld ms each", n, static_cast<unsigned>(total), ms,
+             n ? ms / static_cast<long>(n) : 0L);
+}
+
 void storeTuned(const si4732::TuneStatus& t, bool fm, Applied& a) {
     const int32_t hz = fm ? t.freq * 10000 : t.freq * 1000;
     Lock lock;
@@ -195,13 +261,14 @@ void task(void*) {
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(50));
         State s;
         int8_t seekReq;
-        bool stopReq, down;
+        bool stopReq, down, scanReq;
         {
             Lock lock;
             s = s_state;
             seekReq = s_seekReq;
             stopReq = s_stopReq;
             down = s_shutdown;
+            scanReq = s_scanReq;
             s_seekReq = 0;
             s_stopReq = false;
         }
@@ -228,13 +295,17 @@ void task(void*) {
             Lock lock;
             seeking = s_live.seeking;
         }
-        if (stopReq && seeking) {
+        if ((stopReq || scanReq) && seeking) {
             si4732::TuneStatus t;
             if (si4732::tuneStatus(fm, true, true, t)) storeTuned(t, fm, a);
             if (fm) rdsRestart();
             Lock lock;
             s_live.seeking = false;
             seeking = false;
+        }
+        if (scanReq) {
+            runScan(s, a);
+            continue;
         }
         if (seekReq && !seeking && funcOf(s.mode) != si4732::Func::SSB) {
             seekBand(s);
@@ -375,6 +446,35 @@ int rdsGroups(rds::Raw* out, int max) {
     const int n = s_rdsRing->count() < max ? s_rdsRing->count() : max;
     for (int i = 0; i < n; i++) out[i] = s_rdsRing->at(s_rdsRing->count() - n + i);
     return n;
+}
+
+ScanStart startScan(scan::Scope scope, int64_t utcMs) {
+    {
+        Lock lock;
+        if (s_scan.phase == scan::Phase::Running) return ScanStart::Busy;
+        if (isFm(s_state.mode)) return ScanStart::NotAm;
+        int band;
+        int32_t lo, hi;
+        if (!scanRange(s_state.hz, s_state.mode, scope == scan::Scope::All, band, lo, hi)) return ScanStart::NoBand;
+        scan::start(s_scan, scope, band, lo, hi, s_state.hz, utcMs);
+        s_scanReq = true;
+    }
+    wake();
+    return ScanStart::Ok;
+}
+
+void stopScan(bool cancel) {
+    Lock lock;
+    if (s_scan.phase != scan::Phase::Running) return;
+    if (cancel)
+        scan::cancel(s_scan);
+    else
+        scan::stop(s_scan);
+}
+
+void scanState(scan::State& out) {
+    Lock lock;
+    out = s_scan;
 }
 
 void shutdown() {

@@ -85,6 +85,9 @@ int32_t clampHz(int32_t hz, Mode m);
 int bandIndex(int32_t hz, Mode m);  // -1 outside every named band
 const char* bandLabel(int32_t hz, Mode m);
 int32_t bandDefaultHz(int band);
+// The guide scan's range in kHz: the band holding hz (false outside one), or with `all` LW, MW and SW, 153 to 30000
+// kHz with band -1.
+bool scanRange(int32_t hz, Mode m, bool all, int& band, int32_t& loKhz, int32_t& hiKhz);
 // AM antenna tuning capacitor (ANTCAP) for a tuned frequency: 0 (automatic, tuned for a ferrite loop) on LW and
 // MW, 1 on SW for a whip or wire, as the stock firmware sets it.
 uint16_t amAntennaCap(int32_t khz);
@@ -120,6 +123,9 @@ enum class Cmd : uint8_t {
     NtpServer,    // the server typed in text entry
     GuideUpdate,  // Settings > Guide > Update guide: restart into download mode
     FirmwareUpdate,  // Settings > Firmware > Update: restart into download mode
+    GuideScan,        // v = scan::Scope: Scan band or Scan all
+    GuideScanStop,    // stop the scan, keeping the results so far
+    GuideScanCancel,  // cancel the scan, with no results
 };
 
 struct Command {

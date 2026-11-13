@@ -278,7 +278,7 @@ own bandwidth.
 
 ### Seek
 
-![The seek list: Seek up, Seek down](images/guide/seek_list.png)
+![The seek list in AM with a guide: Seek up, Seek down, Scan band, Scan all](images/guide/seek_list.png)
 
 Choose `Seek up` or `Seek down`. The K-Radio returns to the home screen and searches for the next station in that
 direction. It stops on the first station it finds. Inside a named band the search covers that band. Outside one it
@@ -287,6 +287,53 @@ end. The search moves in steps of the current step.
 
 Turning the wheel, pressing it or pressing the side button stops a seek. Seek works on FM and AM. In LSB and USB the
 K-Radio shows `No seek in SSB`.
+
+### Scan
+
+The frequency guide lists what broadcasts on each frequency, not what can be heard. A scan tunes every frequency in
+the guide that has a broadcast on air now, measures the signal on each, and lists them strongest first with the
+station names, so a press tunes to a station that is actually receivable.
+
+In AM, LSB and USB with a guide loaded, the Seek list also holds `Scan band` and `Scan all`. `Scan band` covers the
+band the frequency is in, for example 5900 to 6200 kHz in 49m; outside a named band it is not in the list. `Scan all`
+covers LW, MW and SW, 153 to 30000 kHz. The frequencies are those with a guide entry on air at the time the scan
+starts, by the same rule as the Station screen; without the clock set, every frequency the guide lists, irregular
+broadcasts included. A broadcast band holds a few dozen of them, and LW, MW and SW together about a thousand at any
+hour.
+
+![The Seek list with Scan band selected](images/guide/scan_seek.png)
+
+The K-Radio stays in its mode (AM, or LSB or USB) and bandwidth and is muted during the scan. The screen shows what is
+being scanned, the frequency last tuned, a bar and the count of frequencies measured. Each frequency takes about
+0.15 s, so `Scan band` takes a few seconds and `Scan all` about two and a half minutes. The wheel does not tune
+during a scan. A press or the side button stops the scan and shows the results so far; a long press cancels it, with
+no results, and returns to the home screen.
+
+![Scanning 49m: 5920 kHz, a bar, Back: cancel, 3/7](images/guide/scan_band.png)
+
+The results list the 40 strongest frequencies: per row the name of the first station on air there, cut with `…` when
+it is long, then the frequency in kHz and the signal strength (RSSI). The strongest come first; two of the same
+strength are ordered by the signal-to-noise ratio. The K-Radio tunes to the selected row as the selection moves, so
+each can be heard. A press keeps that frequency and returns to the home screen. A long press or the side button
+returns to the frequency the scan started on. The list closes after 8 s without input, keeping the selected
+frequency.
+
+![The results: CFRX Toronto, CF… 6070 48, Rádio Casa AM 5900 41, China Radio Int. 5955 36, World Music Radio 5930 30](images/guide/scan_band_results.png)
+
+![Further down the results, HCJB Voice of An… 5920 24 selected](images/guide/scan_results_scrolled.png)
+
+RSSI (received signal strength) is the level at the antenna input in dBµV: each 6 dB doubles the signal's voltage,
+and 20 dB is ten times. It measures everything on the frequency, the station and any noise or interference, so a
+high RSSI is a strong signal, not always a clear one; the signal-to-noise ratio, shown on the web page, tells how far
+the station stands above the noise. The signal bars on the home screen use the same scale: the first lights at
+10 dBµV on LW, MW and SW. `Nothing heard` means no frequency gave a reading above 0.
+
+![Nothing heard](images/guide/scan_nothing.png)
+
+The results stay until the next scan or until the K-Radio is switched off. The Seek list then also holds `Last scan`,
+which opens them again.
+
+![The Seek list with Last scan](images/guide/scan_results_last.png)
 
 ## Station (RDS)
 
@@ -696,6 +743,14 @@ The Radio view:
   it shows `RDS: searching`.
 - In AM, LSB and USB, the frequency section lists the frequency guide's entries within 1 kHz, as on the K-Radio's
   Station screen: time, days, name, language and target, with the entries on air highlighted.
+- In AM, LSB and USB, the `Scan` section starts a [scan](#scan) with `Scan band` (inside a named band) or `Scan all`.
+  While it runs, the section shows its progress, for example `Scanning 49m 23/58`, and `Stop` ends it with the
+  results so far. Afterwards it shows the last scan with its count. The results are listed strongest first with
+  their frequency, name, RSSI and signal-to-noise ratio; a press on a row tunes the K-Radio to it. A scan started from
+  the page runs the same way as one started on the K-Radio, which shows nothing new on its screen; the wheel does not
+  tune while it runs. `POST http://radio.local/api/scan` with `{"scope": "band"}` or `{"scope": "all"}` starts one
+  (409 while one runs, in FM or outside a band; 400 without a guide), `DELETE /api/scan` stops it, and
+  `GET /api/state` includes it as `scan`.
 - The `-` and `+` buttons tune by the step. A frequency typed into the box (in MHz on FM, in kHz otherwise) tunes the
   K-Radio when `Tune` is pressed.
 - Menus pick the band, mode, step and bandwidth. A slider sets the volume. A tick box mutes the K-Radio.

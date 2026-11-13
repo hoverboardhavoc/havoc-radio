@@ -110,6 +110,12 @@ TEST(goldens) {
                 sim->dl.done = w.size() > 3 ? std::stoul(w[2]) : 0;
                 sim->dl.total = w.size() > 3 ? std::stoul(w[3]) : 0;
             }
+        } else if (op == "scan") {
+            // The guide scan's receiver, as tools/gen_goldens.py.
+            sim->tick(now);
+            if (w[1] == "signal") sim->signal[std::stoi(w[2])] = {std::stoi(w[3]), std::stoi(w[4])};
+            else if (w[1] == "step") sim->scanStep(std::stoi(w[2]));
+            else t::fail(__FILE__, __LINE__, "unknown scan " + w[1]);
         } else if (op == "ntp") {
             // An NTP sync at HH:MM UTC on 2026-11-10, as tools/gen_goldens.py.
             const int64_t day = 1794268800000LL;
