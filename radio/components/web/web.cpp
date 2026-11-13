@@ -21,6 +21,7 @@
 #include "guide.h"
 #include "i18n_json.h"
 #include "i18n_strings.h"
+#include "input.h"
 #include "lwip/sockets.h"
 #include "net.h"
 #include "power.h"
@@ -706,6 +707,46 @@ esp_err_t getFirmware(httpd_req_t* req) {
 // The same request as Update in Settings > Firmware, without the install prompt.
 esp_err_t postFirmwareUpdate(httpd_req_t* req) { return requestDownload(req, download::Request::FirmwareApi); }
 
+// ---- input scripts ----
+
+constexpr uint32_t kInputWaitMs = 20000;
+
+esp_err_t sendJson(httpd_req_t* req, const char* status, const char* fmt, int v) {
+    char out[32];
+    const int n = snprintf(out, sizeof out, fmt, v);
+    httpd_resp_set_status(req, status);
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, out, n);
+}
+
+// Lines of the scenario input syntax, injected where the hardware's events enter the UI. The answer waits until the
+// UI loop has taken every step and drawn a frame after the last: 200 {"steps": n}, or after 20 s 503 with the steps
+// taken so far (the rest are still taken, and new scripts get 409 until they are). 400 {"line": n} for a line it
+// does not take (0: over 1 KB).
+esp_err_t postInput(httpd_req_t* req) {
+    if (!s_json) return sendJson(req, "503 Service Unavailable", "{\"steps\":%d}", 0);
+    const size_t len = req->content_len;
+    if (len > input::kScriptBytes) return sendJson(req, "400 Bad Request", "{\"line\":%d}", 0);
+    for (size_t got = 0; got < len;) {
+        const int r = httpd_req_recv(req, s_json + got, len - got);
+        if (r == HTTPD_SOCK_ERR_TIMEOUT) continue;
+        if (r <= 0) return ESP_FAIL;
+        got += r;
+    }
+    input::Step steps[input::kScriptLines];
+    int bad;
+    const int n = input::parseScript(s_json, len, steps, &bad);
+    if (n < 0) return sendJson(req, "400 Bad Request", "{\"line\":%d}", bad);
+    if (!n) return sendJson(req, "200 OK", "{\"steps\":%d}", 0);
+    if (!input::inject(steps, n)) return sendJson(req, "409 Conflict", "{\"error\":\"busy\",\"steps\":%d}", 0);
+    int taken;
+    if (!input::waitInjected(kInputWaitMs, &taken))
+        return sendJson(req, "503 Service Unavailable", "{\"steps\":%d}", taken);
+    return sendJson(req, "200 OK", "{\"steps\":%d}", taken);
+}
+
+// ---- firmware upload ----
+
 SemaphoreHandle_t s_decided;
 volatile bool s_confirmReq = false;
 volatile bool s_install = false;
@@ -785,7 +826,7 @@ void start(const char* version) {
     s_decided = xSemaphoreCreateBinary();
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
     cfg.stack_size = 6144;
-    cfg.max_uri_handlers = 26;
+    cfg.max_uri_handlers = 27;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     cfg.close_fn = onClose;
@@ -813,6 +854,7 @@ void start(const char* version) {
     handle("/api/firmware/update", HTTP_POST, postFirmwareUpdate);
     handle("/api/scan", HTTP_POST, postScan);
     handle("/api/scan", HTTP_DELETE, delScan);
+    handle("/api/input", HTTP_POST, postInput);
     handle("/api/screen", HTTP_GET, getScreen);
     xTaskCreate(sseTask, "sse", 2048, nullptr, 2, nullptr);
 }

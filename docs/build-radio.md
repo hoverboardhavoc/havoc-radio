@@ -46,6 +46,7 @@ continues; the radio then starts with no guide. The format and its converter bel
 - the navigation and text entry rules;
 - the band, step and preset math;
 - the encoder decoder and the button timing;
+- the input script parser and the injection of its steps among the hardware's events;
 - the fit of every string in every language on every screen;
 - the receiver driver's opcode guard;
 - the guide reader on the data repository's tables (`radio/test/guide/`) and hostile ones, the on-air rule, the
@@ -78,6 +79,41 @@ the goldens). `radio/tools/pbm2png.py` renders it:
 curl -s http://radio.local/api/screen -o screen.pbm
 python3 radio/tools/pbm2png.py screen.pbm .   # writes screen.png
 ```
+
+`POST /api/input` presses the radio's controls from a script. It takes lines of the input syntax of
+`radio/test/scenarios.txt`: `turn N` (N detents, negative anticlockwise), `press`, `long`, `side`, `sidehold` and
+`wait MS` (at most 10,000), at most 64 lines and 1 KB, with `#` starting a comment. The events are put into the
+queue that the encoder and the buttons fill, after the hardware's events, one step per pass of the UI loop; `long`
+and `sidehold` are the decoded long press and hold. The answer is sent once the UI loop has taken every step and
+drawn a frame after the last: 200 with `{"steps": n}`, or 503 with the steps taken so far when that takes over 20 s
+(the rest are still taken). A line that is not understood is answered with 400 and `{"line": n}` (line 0 for a body
+over 1 KB); a request made while an earlier script is still being taken is answered with 409. Injected events count
+as user activity. On the firmware confirm screen they are dropped, so an upload is installed only by the real knob.
+The web page's Screen view sends the knob and the side button under the screen this way.
+
+`radio/tools/radio_screens.py` runs a script of such lines against a radio and compares the captures of two runs.
+Each line is sent as its own request. A script may also contain:
+
+| Line | Effect |
+|---|---|
+| `shot NAME` | The screen is captured to `NAME.pbm` and `NAME.png` in the output directory. |
+| `mask X Y W H` | The rectangle is left out of the comparison of the next `shot`; several may be given. |
+| `tune KHZ`, `mode M`, `band B` | The radio is set through `/api/tune`, `/api/mode` or `/api/band`. |
+
+`radio/test/bench/screens.txt` walks home on 6070 kHz, the main menu, the Station screen, Settings and each of its
+pages and the lamp screen, with masks over the clock, the signal bars, the on-air names, the scanned networks, the
+battery and the guide entries. It is run twice and the runs are compared:
+
+```sh
+python3 radio/tools/radio_screens.py run radio/test/bench/screens.txt --host radio.local --out radio/build/screens/a
+python3 radio/tools/radio_screens.py run radio/test/bench/screens.txt --host radio.local --out radio/build/screens/b
+python3 radio/tools/radio_screens.py compare radio/build/screens/b radio/build/screens/a
+```
+
+The masks of each capture are written to `masks.json` in the output directory. `compare` checks every capture
+against the one of the same name in the reference directory outside the masks of either run, writes a side-by-side
+PNG of each one that differs to `diff/` (the capture, the reference and the differing pixels in red), and exits
+with status 1 when any capture differs. Only the Python standard library is needed.
 
 ## Flash
 
@@ -123,5 +159,5 @@ The radio reads the branch named by the build setting `HAVOC_FIRMWARE_BRANCH`, `
 | `radio/components/` | `board`, `i2c`, `si4732`, `ssd1306`, `gfx`, `ui`, `input`, `radio`, `rds`, `clock`, `lamp`, `store`, `net`, `web`, `power`, `guide`, `download` (the download mode for the guide and the firmware) |
 | `radio/components/web/page/index.html` | The web page served at `/` |
 | `radio/ui/prototype.html` | The UI reference |
-| `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch and guide fetch, guide table converter, `idf.sh`, install image builder, app size check, firmware branch commit |
-| `radio/test/` | Host tests, scenarios and goldens |
+| `radio/tools/` | SDK setup, font and string generators, golden renderer, PBM to PNG, SSB patch and guide fetch, guide table converter, `idf.sh`, install image builder, app size check, firmware branch commit, the bench screen tool |
+| `radio/test/` | Host tests, scenarios and goldens; `bench/`, the bench screen script |

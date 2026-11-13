@@ -1,0 +1,74 @@
+# The radio's screens for radio/tools/radio_screens.py: home on 6070 kHz, the main menu, the Station screen,
+# Settings and each of its pages, and the lamp screen. The masks cover what changes from run to run: the on-air
+# name and the signal bars on home's top row, the clock, scanned networks, the age of the last sync, the battery,
+# and the guide entries, whose order follows the clock. The lamp is assumed off at the start.
+
+# Home from wherever the radio is, on a known frequency.
+side
+side
+side
+side
+band 49m
+mode AM
+tune 6070
+mask 0 0 128 8      # on-air name, step and signal bars
+mask 0 24 40 8      # UTC
+shot home
+
+# The main menu, down to Station and Settings.
+press
+shot menu
+turn 3
+shot menu_mode
+turn 3
+shot menu_seek
+turn 1
+press
+mask 9 0 118 32     # the guide entries for 6070 kHz
+shot station
+side
+turn 1
+shot menu_settings
+
+# Settings and its pages (AGC is a switch and Light the lamp screen, so both are passed over).
+press
+shot settings
+press
+mask 9 8 118 24     # scanned networks
+shot settings_wifi
+side
+turn 2
+press
+shot settings_contrast
+side
+turn 2
+press
+mask 9 16 118 8     # the age of the last sync
+shot settings_time
+side
+turn 1
+press
+shot settings_guide
+side
+turn 1
+press
+shot settings_language
+side
+turn 1
+press
+mask 10 16 118 16   # battery and UTC
+shot settings_about
+side
+side
+side
+mask 0 0 128 8
+mask 0 24 40 8
+shot home_back
+
+# The lamp screen from the side button's hold, and its hold again to turn the lamp off and go back.
+sidehold
+shot lamp
+sidehold
+mask 0 0 128 8
+mask 0 24 40 8
+shot home_lamp_off
